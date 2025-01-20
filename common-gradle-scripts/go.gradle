@@ -67,3 +67,29 @@ tasks.register('go_linux_build', Exec) {
         throw new StopExecutionException('Missing "file" property')
     }
 }
+
+tasks.register('go_build_cgo_enabled') {
+    group 'go'
+    description 'Compiles the packages named by the import paths, along with their dependencies. AMD64 Archtecture'
+    dependsOn go_mac_os_build_cgo_enabled
+    dependsOn go_linux_build_cgo_enabled
+}
+tasks.register('go_mac_os_build_cgo_enabled', Exec) {
+    group 'go'
+    description 'Compiles the packages named by the import paths, along with their dependencies. AMD64 Archtecture'
+    if (project.hasProperty('file')) {
+        commandLine 'env', 'GOOS=linux', 'GOARCH=arm64','CGO_ENABLED=1', 'CC=aarch64-linux-gnu-gcc', 'go', 'build', '-o','arm64/main', file
+    } else {
+        throw new StopExecutionException('Missing "file" property')
+    }
+    dependsOn go_linux_build_cgo_enabled
+}
+tasks.register('go_linux_build_cgo_enabled', Exec) {
+    group 'go'
+    description 'Compiles the packages named by the import paths, along with their dependencies. AMD64 Archtecture'
+    if (project.hasProperty('file')) {
+        commandLine 'env', 'GOOS=linux', 'GOARCH=amd64','CGO_ENABLED=1', 'CC=gcc', 'go', 'build', '-o','amd64/main', file
+    } else {
+        throw new StopExecutionException('Missing "file" property')
+    }
+}

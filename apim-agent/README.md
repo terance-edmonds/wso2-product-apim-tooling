@@ -1,0 +1,14 @@
+# Agent to integrate APK with APIM
+## For WSO2 API Manager 4.4.0
+
+## Getting Started APIM-APK Agent
+
+### Setting up the development environment
+    1. Install [Go 1.23](https://golang.org/dl)
+    2. Fork the [repository](https://github.com/wso2/product-apim-tooling)
+    3. Clone your fork into any directory.
+    5. `cd` into cloned directory and then cd into `product-apim-tooling/apim-agent`
+    6. Execute `./gradlew build` to build the docker image.
+    7. `cd` into cloned directory and then cd into `product-apim-tooling/helm-charts`
+    8. Run `helm install apim-agent . -n apk` to deploy the agent in K8s.
+    9. Run `helm uninstall apim-agent -n apk` to undeploy the agent in K8s.
