@@ -19,8 +19,8 @@ package main
 
 import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	"github.com/wso2/product-apim-tooling/apim-agent/internal/agent"
 	"github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/agent"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
 )
 

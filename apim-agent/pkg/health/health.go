@@ -36,9 +36,7 @@ var (
 
 // Service components to be set health status
 const (
-	RestService                 service = "apk.apim.agent.internal.RestService"
 	NotificationListenerService service = "apk.apim.agent.internal.NotificationListenerService"
-	CommonControllerGrpcService service = "apk.apim.agent.internal.CommonControllerGrpcService"
 )
 
 type service string

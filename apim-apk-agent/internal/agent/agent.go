@@ -81,7 +81,6 @@ func init() {
 	flag.UintVar(&alsPort, "als", 18090, "Accesslog server port")
 	flag.StringVar(&mode, "ads", ads, "Management server type (ads, grpc, rest)")
 	flag.UintVar(&restPort, "rest_port", 18001, "Rest server port")
-
 }
 
 // Run starts the GRPC server and Rest API server.

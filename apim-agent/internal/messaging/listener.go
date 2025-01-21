@@ -20,19 +20,19 @@ package messaging
 
 import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	logger "github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	logger "github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
 )
 
 // ProcessEvents to pass event consumption
-func ProcessEvents(config *config.Config, c client.Client) {
+func ProcessEvents(config *config.Config, c client.Client, agent types.Agent) {
 	msg.InitiateJMSConnection(config.ControlPlane.BrokerConnectionParameters.EventListeningEndpoints)
+	go handleNotification(c, agent)
 
-	agent, err := loadAgent(config.Agent.PluginPath)
-	if err != nil {
-		logger.LoggerMessaging.Errorf("Error occurred while loading the agent plugin %v. ", err)
-	} else {
-		go handleNotification(c, agent)
-	}
+	// run agent specific event handlers
+	logger.LoggerAgent.Info("Running gateway event handler...")
+	agent.ProcessEvents(config, c)
 }

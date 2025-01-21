@@ -59,13 +59,11 @@ var (
 
 func init() {
 	log.SetLogger(zap.New(zap.UseDevMode(true)))
-
 	UpdateLoggers()
 }
 
 // UpdateLoggers initializes the logger package references
 func UpdateLoggers() {
-
 	LoggerNotifier = logging.InitPackageLogger(pkgNotifier)
 	LoggerK8sClient = logging.InitPackageLogger(pkgK8sClient)
 	LoggerMapper = logging.InitPackageLogger(pkgMapper)
