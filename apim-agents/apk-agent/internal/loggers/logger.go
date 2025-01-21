@@ -60,7 +60,6 @@ func init() {
 
 // UpdateLoggers initializes the logger package references
 func UpdateLoggers() {
-
 	LoggerNotifier = logging.InitPackageLogger(pkgNotifier)
 	LoggerK8sClient = logging.InitPackageLogger(pkgK8sClient)
 	LoggerMapper = logging.InitPackageLogger(pkgMapper)
@@ -69,5 +68,5 @@ func UpdateLoggers() {
 	LoggerUtils = logging.InitPackageLogger(pkgUtils)
 	LoggerAgent = logging.InitPackageLogger(pkgAgent)
 	LoggerEventhub = logging.InitPackageLogger(pkgEventhub)
-	logrus.Info("Updated loggers")
+	logrus.Info("Updated apk agent loggers")
 }

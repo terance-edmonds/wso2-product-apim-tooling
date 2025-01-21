@@ -61,7 +61,8 @@ var (
 	applicationListTimeStampMap  = make(map[string]int64, 0)
 )
 
-func handleLifeCycleEvents(data []byte) {
+// HandleLifeCycleEvents handles the events of an api through out the life cycle
+func HandleLifeCycleEvents(data []byte) {
 	var apiEvent msg.APIEvent
 	apiLCEventErr := json.Unmarshal([]byte(string(data)), &apiEvent)
 	if apiLCEventErr != nil {
@@ -87,8 +88,8 @@ func handleLifeCycleEvents(data []byte) {
 	}
 }
 
-// handleAPIEvents to process api related data
-func handleAPIEvents(data []byte, eventType string, conf *config.Config, c client.Client) {
+// HandleAPIEvents to process api related data
+func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c client.Client) {
 	var (
 		apiEvent         msg.APIEvent
 		currentTimeStamp int64 = apiEvent.Event.TimeStamp
@@ -163,8 +164,8 @@ func handleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 	}
 }
 
-// handleApplicationEvents to process application related events
-func handleApplicationEvents(data []byte, eventType string) {
+// HandleApplicationEvents to process application related events
+func HandleApplicationEvents(data []byte, eventType string) {
 	if strings.EqualFold(applicationRegistration, eventType) ||
 		strings.EqualFold(removeApplicationKeyMapping, eventType) {
 		var applicationRegistrationEvent msg.ApplicationRegistrationEvent
@@ -251,8 +252,8 @@ func handleApplicationEvents(data []byte, eventType string) {
 	}
 }
 
-// handleSubscriptionRelatedEvents to process subscription related events
-func handleSubscriptionEvents(data []byte, eventType string) {
+// HandleSubscriptionRelatedEvents to process subscription related events
+func HandleSubscriptionEvents(data []byte, eventType string) {
 	var subscriptionEvent msg.SubscriptionEvent
 	subEventErr := json.Unmarshal([]byte(string(data)), &subscriptionEvent)
 	if subEventErr != nil {
@@ -301,8 +302,8 @@ func handleSubscriptionEvents(data []byte, eventType string) {
 	}
 }
 
-// handlePolicyRelatedEvents to process policy related events
-func handlePolicyEvents(data []byte, eventType string, c client.Client) {
+// HandlePolicyRelatedEvents to process policy related events
+func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 	var policyEvent msg.PolicyInfo
 	policyEventErr := json.Unmarshal([]byte(string(data)), &policyEvent)
 	if policyEventErr != nil {
@@ -403,8 +404,8 @@ func handlePolicyEvents(data []byte, eventType string, c client.Client) {
 	}
 }
 
-// handleAIProviderEvents to process AI Provider related events
-func handleAIProviderEvents(data []byte, eventType string, c client.Client) {
+// HandleAIProviderEvents to process AI Provider related events
+func HandleAIProviderEvents(data []byte, eventType string, c client.Client) {
 	var aiProviderEvent msg.AIProviderEvent
 	aiProviderEventErr := json.Unmarshal([]byte(string(data)), &aiProviderEvent)
 	if aiProviderEventErr != nil {
