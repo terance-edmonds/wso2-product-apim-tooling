@@ -19,58 +19,21 @@
 package agent
 
 import (
-	"crypto/tls"
-	"flag"
-	"fmt"
-	"net"
 	"sync"
-	"time"
 
 	cpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/cp/v1alpha2"
 	dpv1alpha1 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha1"
 	dpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha2"
 	dpv1alpha3 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha3"
-	"github.com/wso2/apk/common-go-libs/pkg/discovery/api/wso2/discovery/service/apkmgt"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/eventhub"
 	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
-	logging "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/logging"
 	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/synchronizer"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/managementserver"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/keepalive"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
-
-var (
-	debug       bool
-	onlyLogging bool
-
-	port     uint
-	alsPort  uint
-	restPort uint
-
-	mode string
-)
-
-const (
-	ads                      = "ads"
-	amqpProtocol             = "amqp"
-	grpcMaxConcurrentStreams = 1000000
-)
-
-func init() {
-	flag.BoolVar(&debug, "debug", true, "Use debug logging")
-	flag.BoolVar(&onlyLogging, "onlyLogging", false, "Only demo AccessLogging Service")
-	flag.UintVar(&port, "port", 18000, "Management server port")
-	flag.UintVar(&alsPort, "als", 18090, "Accesslog server port")
-	flag.StringVar(&mode, "ads", ads, "Management server type (ads, grpc, rest)")
-	flag.UintVar(&restPort, "rest_port", 18001, "Rest server port")
-}
 
 // PreRun prepares the agent environment and runs before Run.
 func PreRun(conf *config.Config, scheme *runtime.Scheme) {
@@ -112,57 +75,4 @@ func Run(conf *config.Config, mgr manager.Manager) {
 
 	// Load initial KM data from control plane
 	synchronizer.FetchKeyManagersOnStartUp(mgr.GetClient())
-
-	var grpcOptions []grpc.ServerOption
-	grpcOptions = append(grpcOptions, grpc.KeepaliveParams(
-		keepalive.ServerParameters{
-			Time:    time.Duration(5 * time.Minute),
-			Timeout: time.Duration(20 * time.Second),
-		}),
-		grpc.MaxConcurrentStreams(grpcMaxConcurrentStreams),
-	)
-	publicKeyLocation, privateKeyLocation, truststoreLocation := config.GetKeyLocations()
-	cert, err := config.GetServerCertificate(publicKeyLocation, privateKeyLocation)
-
-	caCertPool := config.GetTrustedCertPool(truststoreLocation)
-
-	if err == nil {
-		grpcOptions = append(grpcOptions, grpc.Creds(
-			credentials.NewTLS(&tls.Config{
-				Certificates: []tls.Certificate{cert},
-				ClientAuth:   tls.RequireAndVerifyClientCert,
-				ClientCAs:    caCertPool,
-			}),
-		))
-	} else {
-		logger.LoggerAgent.Warn("failed to initiate the ssl context: ", err)
-		panic(err)
-	}
-
-	grpcOptions = append(grpcOptions, grpc.KeepaliveParams(
-		keepalive.ServerParameters{
-			Time:    time.Duration(5 * time.Minute),
-			Timeout: time.Duration(20 * time.Second),
-		}),
-	)
-	grpcServer := grpc.NewServer(grpcOptions...)
-
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		logger.LoggerAgent.ErrorC(logging.PrintError(logging.Error1100, logging.BLOCKER, "Failed to listen on port: %v, error: %v", port, err.Error()))
-	}
-	apkmgt.RegisterEventStreamServiceServer(grpcServer, &managementserver.EventServer{})
-
-	logger.LoggerAgent.Info("port: ", port, " APK agent Listening for gRPC connections")
-
-	go managementserver.StartInternalServer(restPort)
-
-	go func() {
-		logger.LoggerAgent.Info("Starting GRPC server.")
-		if err = grpcServer.Serve(lis); err != nil {
-			logger.LoggerAgent.ErrorC(logging.PrintError(logging.Error1101, logging.BLOCKER, "Failed to start GRPC server, error: %v", err.Error()))
-		}
-	}()
-
-	logger.LoggerAgent.Info("Bye!")
 }

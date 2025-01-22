@@ -11,6 +11,7 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sClient"
@@ -18,7 +19,6 @@ import (
 	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
 	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/synchronizer"
 	internalutils "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/utils"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/managementserver"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

@@ -20,8 +20,8 @@ package eventhub
 import (
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	eventhubTypes "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/managementserver"
 )
 
 // SubscriptionList for struct list of applications

@@ -37,7 +37,6 @@ import (
 	k8sclient "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
 	pkgAuth "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/auth"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/managementserver"
 	sync "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/synchronizer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -148,7 +147,7 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c 
 			} else if policy.DefaultLimit.RequestCount.TimeUnit == "day" {
 				policy.DefaultLimit.RequestCount.TimeUnit = "Day"
 			}
-			managementserver.AddRateLimitPolicy(policy)
+			// managementserver.AddRateLimitPolicy(policy)
 			logger.LoggerSynchronizer.Infof("RateLimit Policy added to internal map: %v", policy)
 			// Update the exisitng rate limit policies with current policy
 			k8sclient.UpdateRateLimitPolicyCR(policy, c)
@@ -311,7 +310,7 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 						total := *policy.DefaultLimit.AiAPIQuota.PromptTokenCount + *policy.DefaultLimit.AiAPIQuota.CompletionTokenCount
 						policy.DefaultLimit.AiAPIQuota.TotalTokenCount = &total
 					}
-					managementserver.AddSubscriptionPolicy(policy)
+					// managementserver.AddSubscriptionPolicy(policy)
 					k8sclient.DeployAIRateLimitPolicyFromCPPolicy(policy, c)
 				} else {
 					logger.LoggerSynchronizer.Errorf("AIQuota type response recieved but no data found. %+v", policy.DefaultLimit)
@@ -324,7 +323,7 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 				} else if policy.DefaultLimit.RequestCount.TimeUnit == "days" {
 					policy.DefaultLimit.RequestCount.TimeUnit = "Day"
 				}
-				managementserver.AddSubscriptionPolicy(policy)
+				// managementserver.AddSubscriptionPolicy(policy)
 				logger.LoggerSynchronizer.Infof("RateLimit Policy added to internal map: %v", policy)
 				// Update the exisitng rate limit policies with current policy
 				k8sclient.DeploySubscriptionRateLimitPolicyCR(policy, c)

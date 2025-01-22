@@ -14,35 +14,52 @@ import (
 
 type Agent struct{}
 
+// PreRun handles any prerequisites before agent Run
 func (a Agent) PreRun(conf *config.Config, scheme *runtime.Scheme) {
 	agent.PreRun(conf, scheme)
 }
+
+// Run initiates the gateway specific agent
 func (a Agent) Run(conf *config.Config, mgr manager.Manager) {
 	agent.Run(conf, mgr)
 }
+
+// ProcessEvents handles gateway specific functions need to be triggered on event processing
 func (a Agent) ProcessEvents(conf *config.Config, client client.Client) {
 	messaging.ProcessEvents(conf, client)
 }
+
+// HandleLifeCycleEvents handles the events of an api through out the life cycle
 func (a Agent) HandleLifeCycleEvents(data []byte) {
 	fmt.Println("Triggered: HandleLifeCycleEvents")
 	events.HandleLifeCycleEvents(data)
 }
+
+// HandleAPIEvents to process api related data
 func (a Agent) HandleAPIEvents(data []byte, eventType string, conf *config.Config, client client.Client) {
 	fmt.Println("Triggered: HandleAPIEvents")
 	events.HandleAPIEvents(data, eventType, conf, client)
 }
+
+// HandleApplicationEvents to process application related events
 func (a Agent) HandleApplicationEvents(data []byte, eventType string) {
 	fmt.Println("Triggered: HandleApplicationEvents")
 	events.HandleApplicationEvents(data, eventType)
 }
+
+// HandleSubscriptionRelatedEvents to process subscription related events
 func (a Agent) HandleSubscriptionEvents(data []byte, eventType string) {
 	fmt.Println("Triggered: HandleSubscriptionEvents")
 	events.HandleSubscriptionEvents(data, eventType)
 }
+
+// HandlePolicyRelatedEvents to process policy related events
 func (a Agent) HandlePolicyEvents(data []byte, eventType string, client client.Client) {
 	fmt.Println("Triggered: HandlePolicyEvents")
 	events.HandlePolicyEvents(data, eventType, client)
 }
+
+// HandleAIProviderEvents to process AI Provider related events
 func (a Agent) HandleAIProviderEvents(data []byte, eventType string, client client.Client) {
 	fmt.Println("Triggered: HandleAIProviderEvents")
 	events.HandleAIProviderEvents(data, eventType, client)

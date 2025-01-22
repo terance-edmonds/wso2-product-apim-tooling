@@ -34,9 +34,10 @@ import (
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
+	transformer "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
 	sync "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/synchronizer"
-	transformer "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/transformer"
+	apkTransformer "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	k8sclientUtil "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sClient"
@@ -111,7 +112,7 @@ func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Cli
 							return nil, err
 						}
 
-						apkConf, apiUUID, revisionID, configuredRateLimitPoliciesMap, endpointSecurityData, api, prodAIRL, sandAIRL, apkErr := transformer.GenerateAPKConf(artifact.APIJson, artifact.CertArtifact, apiDeployment.OrganizationID)
+						config, apiUUID, revisionID, configuredRateLimitPoliciesMap, endpointSecurityData, api, prodAIRL, sandAIRL, apkErr := transformer.GenerateConf(artifact.APIJson, artifact.CertArtifact, apiDeployment.OrganizationID)
 						if prodAIRL == nil {
 							// Try to delete production AI ratelimit for this api
 							k8sclientUtil.DeleteAIRatelimitPolicy(generateSHA1HexHash(api.Name, api.Version, "production"), k8sClient)
@@ -124,19 +125,19 @@ func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Cli
 							logger.LoggerUtils.Errorf("Error while generating APK-Conf: %v", apkErr)
 							return nil, err
 						}
-						logger.LoggerUtils.Debugf("APK Conf: %v", apkConf)
+						logger.LoggerUtils.Debugf("APK Conf: %v", config)
 						certContainer := transformer.CertContainer{
 							ClientCertObj:   artifact.CertMeta,
 							EndpointCertObj: artifact.EndpointCertMeta,
 							SecretData:      endpointSecurityData,
 						}
 						k8ResourceEndpoint := conf.DataPlane.K8ResourceEndpoint
-						crResponse, err := transformer.GenerateCRs(apkConf, artifact.Schema, certContainer, k8ResourceEndpoint, apiDeployment.OrganizationID)
+						crResponse, err := apkTransformer.GenerateCRs(config, artifact.Schema, certContainer, k8ResourceEndpoint, apiDeployment.OrganizationID)
 						if err != nil {
 							logger.LoggerUtils.Errorf("Error occured in receiving the updated CRDs: %v", err)
 							return nil, err
 						}
-						transformer.UpdateCRS(crResponse, apiDeployment.Environments, apiDeployment.OrganizationID, apiUUID, fmt.Sprint(revisionID), "namespace", configuredRateLimitPoliciesMap)
+						apkTransformer.UpdateCRS(crResponse, apiDeployment.Environments, apiDeployment.OrganizationID, apiUUID, fmt.Sprint(revisionID), "namespace", configuredRateLimitPoliciesMap)
 						mapperUtil.MapAndCreateCR(*crResponse, k8sClient)
 						apis = append(apis, apiUUID)
 						logger.LoggerUtils.Info("API applied successfully.\n")

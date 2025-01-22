@@ -36,7 +36,6 @@ const (
 	pkgK8sClient    = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sclient"
 	pkgMapper       = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/mapper"
 	pkgMessaging    = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/messaging"
-	pkgNotifier     = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/notifier"
 	pkgSynchronizer = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/synchronizer"
 	pkgUtils        = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/utils"
 	pkgEventhub     = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/eventhub"
@@ -44,7 +43,6 @@ const (
 
 // logger package references
 var (
-	LoggerNotifier     logging.Log
 	LoggerK8sClient    logging.Log
 	LoggerMapper       logging.Log
 	LoggerMessaging    logging.Log
@@ -60,7 +58,6 @@ func init() {
 
 // UpdateLoggers initializes the logger package references
 func UpdateLoggers() {
-	LoggerNotifier = logging.InitPackageLogger(pkgNotifier)
 	LoggerK8sClient = logging.InitPackageLogger(pkgK8sClient)
 	LoggerMapper = logging.InitPackageLogger(pkgMapper)
 	LoggerMessaging = logging.InitPackageLogger(pkgMessaging)

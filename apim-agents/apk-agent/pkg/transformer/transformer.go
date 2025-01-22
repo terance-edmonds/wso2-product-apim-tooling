@@ -30,10 +30,8 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"io"
@@ -43,695 +41,21 @@ import (
 	dpv1alpha1 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha1"
 	dpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha2"
 	dpv1alpha3 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha3"
+	eventHub "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	eventHub "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/constants"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/loggers"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/managementserver"
 	k8Yaml "sigs.k8s.io/yaml"
 
 	"gopkg.in/yaml.v2"
 )
 
-// GenerateAPKConf will Generate the mapped .apk-conf file for a given API Project zip
-func GenerateAPKConf(APIJson string, certArtifact CertificateArtifact, organizationID string) (string, string, uint32, map[string]eventHub.RateLimitPolicy, EndpointSecurityConfig, *API, *AIRatelimit, *AIRatelimit, error) {
-
-	apk := &API{}
-
-	var apiYaml APIYaml
-
-	var configuredRateLimitPoliciesMap = make(map[string]eventHub.RateLimitPolicy)
-
-	logger.LoggerTransformer.Debugf("APIJson: %v", APIJson)
-
-	apiYamlError := json.Unmarshal([]byte(APIJson), &apiYaml)
-
-	if apiYamlError != nil {
-		logger.LoggerTransformer.Error("Error while unmarshalling api.json content", apiYamlError)
-		return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, apiYamlError
-	}
-
-	apiYamlData := apiYaml.Data
-	logger.LoggerTransformer.Debugf("apiYamlData: %v", apiYamlData)
-
-	apk.Name = apiYamlData.Name
-	apk.Context = apiYamlData.Context
-	apk.Version = apiYamlData.Version
-	apk.Type = getAPIType(apiYamlData.Type)
-	apk.DefaultVersion = apiYamlData.DefaultVersion
-	apk.DefinitionPath = "/definition"
-	apk.SubscriptionValidation = true
-
-	if apiYamlData.SubtypeConfiguration.Subtype == "AIAPI" && apiYamlData.SubtypeConfiguration.Configuration != "" {
-		// Unmarshal the _configuration field into the Configuration struct
-		var config Configuration
-		err := json.Unmarshal([]byte(apiYamlData.SubtypeConfiguration.Configuration), &config)
-		if err != nil {
-			fmt.Println("Error unmarshalling _configuration:", err)
-			return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, err
-		}
-		sha1ValueforCRName := config.LLMProviderID
-		apk.AIProvider = &AIProvider{
-			Name:       sha1ValueforCRName,
-			APIVersion: "1",
-		}
-	}
-
-	if apiYamlData.APIThrottlingPolicy != "" {
-		rateLimitPolicy := managementserver.GetRateLimitPolicy(apiYamlData.APIThrottlingPolicy, organizationID)
-		logger.LoggerTransformer.Debugf("Rate Limit Policy: %v", rateLimitPolicy)
-		if rateLimitPolicy.Name != "" && rateLimitPolicy.Name != "Unlimited" {
-			var rateLimitPolicyConfigured = RateLimit{
-				RequestsPerUnit: rateLimitPolicy.DefaultLimit.RequestCount.RequestCount,
-				Unit:            rateLimitPolicy.DefaultLimit.RequestCount.TimeUnit,
-			}
-			apk.RateLimit = &rateLimitPolicyConfigured
-			configuredRateLimitPoliciesMap["API"] = rateLimitPolicy
-		}
-	}
-	apkOperations := make([]Operation, len(apiYamlData.Operations))
-
-	for i, operation := range apiYamlData.Operations {
-
-		reqPolicyCount := len(operation.OperationPolicies.Request)
-		resPolicyCount := len(operation.OperationPolicies.Response)
-		reqInterceptor, resInterceptor := getReqAndResInterceptors(reqPolicyCount, resPolicyCount,
-			operation.OperationPolicies.Request, operation.OperationPolicies.Response)
-
-		var opRateLimit *RateLimit
-		if apiYamlData.APIThrottlingPolicy == "" && operation.ThrottlingPolicy != "" {
-			rateLimitPolicy := managementserver.GetRateLimitPolicy(operation.ThrottlingPolicy, organizationID)
-			logger.LoggerTransformer.Debugf("Op Rate Limit Policy Name: %v", rateLimitPolicy.Name)
-			if rateLimitPolicy.Name != "" && rateLimitPolicy.Name != "Unlimited" {
-				var rateLimitPolicyConfigured = RateLimit{
-					RequestsPerUnit: rateLimitPolicy.DefaultLimit.RequestCount.RequestCount,
-					Unit:            rateLimitPolicy.DefaultLimit.RequestCount.TimeUnit,
-				}
-				opRateLimit = &rateLimitPolicyConfigured
-				configuredRateLimitPoliciesMap["Resource"] = rateLimitPolicy
-			}
-		}
-		logger.LoggerTransformer.Debugf("Operation Auth Type: %v", operation.AuthType)
-		AuthSecured := true
-		if operation.AuthType == "None" {
-			logger.LoggerTransformer.Debugf("Setting AuthSecured to false")
-			AuthSecured = false
-		}
-		op := &Operation{
-			Target:  operation.Target,
-			Verb:    operation.Verb,
-			Scopes:  operation.Scopes,
-			Secured: AuthSecured,
-			OperationPolicies: &OperationPolicies{
-				Request:  *reqInterceptor,
-				Response: *resInterceptor,
-			},
-			RateLimit: opRateLimit,
-		}
-		apkOperations[i] = *op
-	}
-
-	apk.Operations = &apkOperations
-
-	//Adding API Level Operation Policies to the conf
-	reqPolicyCount := len(apiYaml.Data.APIPolicies.Request)
-	resPolicyCount := len(apiYaml.Data.APIPolicies.Response)
-	reqInterceptor, resInterceptor := getReqAndResInterceptors(reqPolicyCount, resPolicyCount,
-		apiYaml.Data.APIPolicies.Request, apiYaml.Data.APIPolicies.Response)
-
-	apk.APIPolicies = &OperationPolicies{
-		Request:  *reqInterceptor,
-		Response: *resInterceptor,
-	}
-
-	//Adding Endpoint-certificate configurations to the conf
-	var endpointCertList EndpointCertDescriptor
-	endCertAvailable := false
-
-	if certArtifact.EndpointCerts != "" {
-		certErr := json.Unmarshal([]byte(certArtifact.EndpointCerts), &endpointCertList)
-		if certErr != nil {
-			logger.LoggerTransformer.Errorf("Error while unmarshalling endpoint_cert.json content: %v", apiYamlError)
-			return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, certErr
-		}
-		endCertAvailable = true
-	}
-
-	sandboxURL := apiYamlData.EndpointConfig.SandboxEndpoints.URL
-	prodURL := apiYamlData.EndpointConfig.ProductionEndpoints.URL
-	endpointSecurityData := apiYamlData.EndpointConfig.EndpointSecurity
-	apiUniqueID := GetUniqueIDForAPI(apiYamlData.Name, apiYamlData.Version, apiYamlData.OrganizationID)
-	logger.LoggerTransformer.Infof("Maxtps: %+v", apiYamlData)
-	prodAIRatelimit, sandAIRatelimit := prepareAIRatelimit(apiYamlData.MaxTps)
-	endpointRes := getEndpointConfigs(sandboxURL, prodURL, endCertAvailable, endpointCertList, endpointSecurityData, apiUniqueID, prodAIRatelimit, sandAIRatelimit)
-
-	apk.EndpointConfigurations = &endpointRes
-
-	//Adding client-certificate configurations to the conf
-	var certList CertDescriptor
-	certAvailable := false
-
-	if certArtifact.ClientCerts != "" {
-		certErr := json.Unmarshal([]byte(certArtifact.ClientCerts), &certList)
-		if certErr != nil {
-			logger.LoggerTransformer.Errorf("Error while unmarshalling client_cert.json content: %v", apiYamlError)
-			return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, certErr
-		}
-		certAvailable = true
-	}
-
-	authConfigList := mapAuthConfigs(apiYamlData.ID, apiYamlData.AuthorizationHeader, apiYamlData.APIKeyHeader,
-		apiYamlData.SecuritySchemes, certAvailable, certList, apiUniqueID)
-
-	apk.Authentication = &authConfigList
-
-	corsEnabled := apiYamlData.CORSConfiguration.CORSConfigurationEnabled
-
-	if corsEnabled {
-		apk.CorsConfig = &apiYamlData.CORSConfiguration
-	}
-
-	aditionalProperties := make([]AdditionalProperty, len(apiYamlData.AdditionalProperties))
-
-	for i, property := range apiYamlData.AdditionalProperties {
-		prop := &AdditionalProperty{
-			Name:  property.Name,
-			Value: property.Value,
-		}
-		aditionalProperties[i] = *prop
-	}
-
-	apk.AdditionalProperties = &aditionalProperties
-
-	c, marshalError := yaml.Marshal(apk)
-
-	if marshalError != nil {
-		logger.LoggerTransformer.Error("Error while marshalling apk yaml", marshalError)
-		return "", "null", 0, nil, EndpointSecurityConfig{}, nil, prodAIRatelimit, sandAIRatelimit, marshalError
-	}
-	return string(c), apiYamlData.RevisionedAPIID, apiYamlData.RevisionID, configuredRateLimitPoliciesMap, endpointSecurityData, apk, prodAIRatelimit, sandAIRatelimit, nil
-}
-
-// prepareAIRatelimit Function that accepts apiYamlData and returns AIRatelimit
-func prepareAIRatelimit(maxTps *MaxTps) (*AIRatelimit, *AIRatelimit) {
-	if maxTps == nil {
-		return nil, nil
-	}
-	prodAIRL := &AIRatelimit{}
-	if maxTps.TokenBasedThrottlingConfiguration == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.IsTokenBasedThrottlingEnabled == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.ProductionMaxPromptTokenCount == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.ProductionMaxCompletionTokenCount == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.ProductionMaxTotalTokenCount == nil ||
-		maxTps.ProductionTimeUnit == nil {
-		prodAIRL = nil
-	} else {
-		prodAIRL = &AIRatelimit{
-			Enabled: *maxTps.TokenBasedThrottlingConfiguration.IsTokenBasedThrottlingEnabled,
-			Token: TokenAIRL{
-				PromptLimit:     *maxTps.TokenBasedThrottlingConfiguration.ProductionMaxPromptTokenCount,
-				CompletionLimit: *maxTps.TokenBasedThrottlingConfiguration.ProductionMaxCompletionTokenCount,
-				TotalLimit:      *maxTps.TokenBasedThrottlingConfiguration.ProductionMaxTotalTokenCount,
-				Unit:            CapitalizeFirstLetter(*maxTps.ProductionTimeUnit),
-			},
-			Request: RequestAIRL{
-				RequestLimit: *maxTps.Production,
-				Unit:         CapitalizeFirstLetter(*maxTps.ProductionTimeUnit),
-			},
-		}
-	}
-	sandAIRL := &AIRatelimit{}
-	if maxTps.TokenBasedThrottlingConfiguration == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.IsTokenBasedThrottlingEnabled == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.SandboxMaxPromptTokenCount == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.SandboxMaxCompletionTokenCount == nil ||
-		maxTps.TokenBasedThrottlingConfiguration.SandboxMaxTotalTokenCount == nil ||
-		maxTps.SandboxTimeUnit == nil {
-		sandAIRL = nil
-	} else {
-		sandAIRL = &AIRatelimit{
-			Enabled: *maxTps.TokenBasedThrottlingConfiguration.IsTokenBasedThrottlingEnabled,
-			Token: TokenAIRL{
-				PromptLimit:     *maxTps.TokenBasedThrottlingConfiguration.SandboxMaxPromptTokenCount,
-				CompletionLimit: *maxTps.TokenBasedThrottlingConfiguration.SandboxMaxCompletionTokenCount,
-				TotalLimit:      *maxTps.TokenBasedThrottlingConfiguration.SandboxMaxTotalTokenCount,
-				Unit:            CapitalizeFirstLetter(*maxTps.SandboxTimeUnit),
-			},
-			Request: RequestAIRL{
-				RequestLimit: *maxTps.Sandbox,
-				Unit:         CapitalizeFirstLetter(*maxTps.SandboxTimeUnit),
-			},
-		}
-	}
-
-	return prodAIRL, sandAIRL
-}
-
-// CapitalizeFirstLetter takes a string and returns it with the first letter capitalized and the rest in lowercase.
-func CapitalizeFirstLetter(input string) string {
-	if len(input) == 0 {
-		return input // Return empty string if input is empty
-	}
-	// Capitalize the first letter and convert the rest to lowercase
-	return strings.ToUpper(string(input[0])) + strings.ToLower(input[1:])
-}
-
-// getAPIType will be selecting the appropriate API type need to be added in the apk-conf
-// based on the type mentioned in the api.json
-func getAPIType(protocolType string) string {
-	if protocolType == "" {
-		logger.LoggerTransformer.Error("Protocol type found empty. Unable to map the API Type.")
-	}
-	var apiType string
-	switch protocolType {
-	case "HTTP", "HTTPS":
-		apiType = "REST"
-	case "GRAPHQL":
-		apiType = "GRAPHQL"
-	}
-	return apiType
-}
-
-// Generate the interceptor policy if request or response policy exists
-func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []APIMOperationPolicy, resPolicies []APIMOperationPolicy) (*[]OperationPolicy, *[]OperationPolicy) {
-	var requestPolicyList, responsePolicyList []OperationPolicy
-	var interceptorParams *InterceptorService
-	var requestInterceptorPolicy, responseInterceptorPolicy, requestBackendJWTPolicy OperationPolicy
-	var mirrorRequestPolicy OperationPolicy
-	var mirrorUrls []string
-
-	if reqPolicyCount > 0 {
-		for _, reqPolicy := range reqPolicies {
-			logger.LoggerTransformer.Debugf("Request Policy: %v", reqPolicy)
-			if reqPolicy.PolicyName == constants.InterceptorService {
-				logger.LoggerTransformer.Debugf("Interceptor Type Request Policy: %v", reqPolicy)
-				logger.LoggerTransformer.Debugf("Interceptor Service URL: %v", reqPolicy.Parameters[interceptorServiceURL])
-				logger.LoggerTransformer.Debugf("Interceptor Includes: %v", reqPolicy.Parameters[includes])
-				interceptorServiceURL := reqPolicy.Parameters[interceptorServiceURL].(string)
-				includes := reqPolicy.Parameters[includes].(string)
-				substrings := strings.Split(includes, ",")
-				bodyEnabled := false
-				headerEnabled := false
-				trailersEnabled := false
-				contextEnabled := false
-				sslEnabled := false
-				tlsSecretName := ""
-				tlsSecretKey := ""
-				for _, substring := range substrings {
-					if strings.Contains(substring, requestHeader) {
-						headerEnabled = true
-					} else if strings.Contains(substring, requestBody) {
-						bodyEnabled = true
-					} else if strings.Contains(substring, requestTrailers) {
-						trailersEnabled = true
-					} else if strings.Contains(substring, requestContext) {
-						contextEnabled = true
-					}
-				}
-
-				if strings.Contains(interceptorServiceURL, https) {
-					sslEnabled = true
-				}
-
-				if sslEnabled {
-					tlsSecretName = reqPolicy.PolicyID + requestInterceptorSecretName
-					tlsSecretKey = tlsKey
-				}
-
-				interceptorParams = &InterceptorService{
-					BackendURL:      interceptorServiceURL,
-					HeadersEnabled:  headerEnabled,
-					BodyEnabled:     bodyEnabled,
-					TrailersEnabled: trailersEnabled,
-					ContextEnabled:  contextEnabled,
-					TLSSecretName:   tlsSecretName,
-					TLSSecretKey:    tlsSecretKey,
-				}
-
-				// Create an instance of OperationPolicy
-				requestInterceptorPolicy = OperationPolicy{
-					PolicyName:    interceptorPolicy,
-					PolicyVersion: v1,
-					Parameters:    interceptorParams,
-				}
-			} else if reqPolicy.PolicyName == constants.BackendJWT {
-				encoding := reqPolicy.Parameters[encoding].(string)
-				header := reqPolicy.Parameters[header].(string)
-				signingAlgorithm := reqPolicy.Parameters[signingAlgorithm].(string)
-				tokenTTL := reqPolicy.Parameters[tokenTTL].(string)
-				tokenTTLConverted, err := strconv.Atoi(tokenTTL)
-				if err != nil {
-					logger.LoggerTransformer.Errorf("Error while converting tokenTTL to integer: %v", err)
-				}
-
-				if encoding == base64Url {
-					encoding = base64url
-				}
-
-				backendJWTParams := &BackendJWT{
-					Encoding:         encoding,
-					Header:           header,
-					SigningAlgorithm: signingAlgorithm,
-					TokenTTL:         tokenTTLConverted,
-				}
-
-				// Create an instance of OperationPolicy
-				requestBackendJWTPolicy = OperationPolicy{
-					PolicyName:    backendJWTPolicy,
-					PolicyVersion: v1,
-					Parameters:    backendJWTParams,
-				}
-			} else if reqPolicy.PolicyName == constants.AddHeader {
-				logger.LoggerTransformer.Debugf("AddHeader Type Request Policy: %v", reqPolicy)
-				requestAddHeader := OperationPolicy{
-					PolicyName:    addHeaderPolicy,
-					PolicyVersion: v1,
-					Parameters: Header{
-						HeaderName:  reqPolicy.Parameters[headerName].(string),
-						HeaderValue: reqPolicy.Parameters[headerValue].(string),
-					},
-				}
-				requestPolicyList = append(requestPolicyList, requestAddHeader)
-			} else if reqPolicy.PolicyName == constants.RemoveHeader {
-				logger.LoggerTransformer.Debugf("RemoveHeader Type Request Policy: %v", reqPolicy)
-				requestRemoveHeader := OperationPolicy{
-					PolicyName:    removeHeaderPolicy,
-					PolicyVersion: v1,
-					Parameters: Header{
-						HeaderName: reqPolicy.Parameters[headerName].(string),
-					},
-				}
-				requestPolicyList = append(requestPolicyList, requestRemoveHeader)
-			} else if reqPolicy.PolicyName == constants.RedirectRequest {
-				logger.LoggerTransformer.Debugf("RedirectRequest Type Request Policy: %v", reqPolicy)
-				redirectRequestPolicy := OperationPolicy{
-					PolicyName:    requestRedirectPolicy,
-					PolicyVersion: v1,
-				}
-				parameters := RedirectPolicy{
-					URL: reqPolicy.Parameters[url].(string),
-				}
-				switch v := reqPolicy.Parameters[statusCode].(type) {
-				case int:
-					parameters.StatusCode = v
-				case string:
-					if intValue, err := strconv.Atoi(v); err == nil {
-						parameters.StatusCode = intValue
-					} else {
-						logger.LoggerTransformer.Error("Invalid status code provided.")
-					}
-				default:
-					parameters.StatusCode = 302
-				}
-				redirectRequestPolicy.Parameters = parameters
-				requestPolicyList = append(requestPolicyList, redirectRequestPolicy)
-			} else if reqPolicy.PolicyName == constants.MirrorRequest {
-				logger.LoggerTransformer.Debugf("MirrorRequest Type Request Policy: %v", reqPolicy)
-				if mirrorRequestPolicy.PolicyName == "" {
-					mirrorRequestPolicy = OperationPolicy{
-						PolicyName:    requestMirrorPolicy,
-						PolicyVersion: v1,
-					}
-					mirrorUrls = []string{}
-				}
-				if reqPolicyParameters, ok := reqPolicy.Parameters[url]; ok {
-					url := reqPolicyParameters.(string)
-					mirrorUrls = append(mirrorUrls, url)
-				}
-			}
-		}
-	}
-
-	if resPolicyCount > 0 {
-		for _, resPolicy := range resPolicies {
-			if resPolicy.PolicyName == constants.InterceptorService {
-				interceptorServiceURL := resPolicy.Parameters[interceptorServiceURL].(string)
-				includes := resPolicy.Parameters[includes].(string)
-				substrings := strings.Split(includes, ",")
-				bodyEnabled := false
-				headerEnabled := false
-				trailersEnabled := false
-				contextEnabled := false
-				sslEnabled := false
-				tlsSecretName := ""
-				tlsSecretKey := ""
-				for _, substring := range substrings {
-					if strings.Contains(substring, requestHeader) {
-						headerEnabled = true
-					} else if strings.Contains(substring, requestBody) {
-						bodyEnabled = true
-					} else if strings.Contains(substring, requestTrailers) {
-						trailersEnabled = true
-					} else if strings.Contains(substring, requestContext) {
-						contextEnabled = true
-					}
-				}
-
-				if strings.Contains(interceptorServiceURL, https) {
-					sslEnabled = true
-				}
-
-				if sslEnabled {
-					tlsSecretName = resPolicies[0].PolicyID + responseInterceptorSecretName
-					tlsSecretKey = tlsKey
-				}
-
-				interceptorParams = &InterceptorService{
-					BackendURL:      interceptorServiceURL,
-					HeadersEnabled:  headerEnabled,
-					BodyEnabled:     bodyEnabled,
-					TrailersEnabled: trailersEnabled,
-					ContextEnabled:  contextEnabled,
-					TLSSecretName:   tlsSecretName,
-					TLSSecretKey:    tlsSecretKey,
-				}
-
-				// Create an instance of OperationPolicy
-				responseInterceptorPolicy = OperationPolicy{
-					PolicyName:    interceptorPolicy,
-					PolicyVersion: v1,
-					Parameters:    interceptorParams,
-				}
-			} else if resPolicy.PolicyName == constants.AddHeader {
-				logger.LoggerTransformer.Debugf("AddHeader Type Response Policy: %v", resPolicy)
-
-				responseAddHeader := OperationPolicy{
-					PolicyName:    addHeaderPolicy,
-					PolicyVersion: v2,
-					Parameters: Header{
-						HeaderName:  resPolicy.Parameters[headerName].(string),
-						HeaderValue: resPolicy.Parameters[headerValue].(string),
-					},
-				}
-				responsePolicyList = append(responsePolicyList, responseAddHeader)
-			} else if resPolicy.PolicyName == constants.RemoveHeader {
-				logger.LoggerTransformer.Debugf("RemoveHeader Type Response Policy: %v", resPolicy)
-				responseRemoveHeader := OperationPolicy{
-					PolicyName:    removeHeaderPolicy,
-					PolicyVersion: v1,
-					Parameters: Header{
-						HeaderName: resPolicy.Parameters[headerName].(string),
-					},
-				}
-				responsePolicyList = append(responsePolicyList, responseRemoveHeader)
-			}
-		}
-	}
-
-	if reqPolicyCount > 0 {
-		if requestInterceptorPolicy.PolicyName != "" {
-			requestPolicyList = append(requestPolicyList, requestInterceptorPolicy)
-		}
-		if requestBackendJWTPolicy.PolicyName != "" {
-			requestPolicyList = append(requestPolicyList, requestBackendJWTPolicy)
-		}
-		if mirrorRequestPolicy.PolicyName != "" {
-			mirrorRequestPolicy.Parameters = URLList{
-				URLs: mirrorUrls,
-			}
-			requestPolicyList = append(requestPolicyList, mirrorRequestPolicy)
-		}
-	}
-
-	if resPolicyCount > 0 {
-		if responseInterceptorPolicy.PolicyName != "" {
-			responsePolicyList = append(responsePolicyList, responseInterceptorPolicy)
-		}
-	}
-	return &requestPolicyList, &responsePolicyList
-}
-
-// mapAuthConfigs will take the security schemes as the parameter and will return the mapped auth configs to be
-// added into the apk-conf
-func mapAuthConfigs(apiUUID string, authHeader string, configuredAPIKeyHeader string, securitySchemes []string, certAvailable bool, certList CertDescriptor, apiUniqueID string) []AuthConfiguration {
-	var authConfigs []AuthConfiguration
-	if StringExists(oAuth2SecScheme, securitySchemes) {
-		var oauth2Config AuthConfiguration
-		oauth2Config.AuthType = oAuth2
-		oauth2Config.Enabled = true
-		oauth2Config.HeaderName = authHeader
-		if StringExists(applicationSecurityMandatory, securitySchemes) {
-			oauth2Config.Required = mandatory
-		} else {
-			oauth2Config.Required = optional
-		}
-
-		authConfigs = append(authConfigs, oauth2Config)
-	}
-	if !StringExists("oauth2", securitySchemes) {
-		oAuth2DisabledConfig := AuthConfiguration{
-			AuthType: oAuth2,
-			Enabled:  false,
-		}
-		authConfigs = append(authConfigs, oAuth2DisabledConfig)
-	}
-	if StringExists(mutualSSL, securitySchemes) && certAvailable {
-		var mtlsConfig AuthConfiguration
-		mtlsConfig.AuthType = mTLS
-		mtlsConfig.Enabled = true
-		if StringExists(mutualSSLMandatory, securitySchemes) {
-			mtlsConfig.Required = mandatory
-		} else {
-			mtlsConfig.Required = optional
-		}
-
-		clientCerts := make([]Certificate, len(certList.CertData))
-
-		for i, cert := range certList.CertData {
-			prop := &Certificate{
-				Name: apiUniqueID + "-" + cert.Alias,
-				Key:  cert.Certificate,
-			}
-			clientCerts[i] = *prop
-		}
-		mtlsConfig.Certificates = clientCerts
-		authConfigs = append(authConfigs, mtlsConfig)
-	}
-
-	internalKeyAuthConfig := AuthConfiguration{
-		AuthType:   jwt,
-		Enabled:    true,
-		Audience:   []string{apiUUID},
-		HeaderName: internalKeyHeader,
-	}
-	authConfigs = append(authConfigs, internalKeyAuthConfig)
-
-	if StringExists(apiKeySecScheme, securitySchemes) {
-		apiKeyAuthConfig := AuthConfiguration{
-			AuthType:       apiKey,
-			Enabled:        true,
-			HeaderName:     configuredAPIKeyHeader,
-			HeaderEnabled:  true,
-			QueryParamName: apiKeyHeader,
-		}
-		if StringExists(applicationSecurityMandatory, securitySchemes) {
-			apiKeyAuthConfig.Required = mandatory
-		} else if StringExists(applicationSecurityOptional, securitySchemes) {
-			apiKeyAuthConfig.Required = optional
-		}
-		authConfigs = append(authConfigs, apiKeyAuthConfig)
-	}
-	return authConfigs
-}
-
-// getEndpointConfigs will map the endpoints and there security configurations and returns them
-// TODO: Currently the APK-Conf does not support giving multiple certs for a particular endpoint.
-// After fixing this, the following logic should be changed to map multiple cert configs
-func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool, endpointCertList EndpointCertDescriptor, endpointSecurityData EndpointSecurityConfig, apiUniqueID string, prodAIRatelimit *AIRatelimit, sandAIRatelimit *AIRatelimit) EndpointConfigurations {
-	var sandboxEndpointConf, prodEndpointConf EndpointConfiguration
-	var sandBoxEndpointEnabled = false
-	var prodEndpointEnabled = false
-	if sandboxURL != "" {
-		sandBoxEndpointEnabled = true
-	}
-	if prodURL != "" {
-		prodEndpointEnabled = true
-	}
-	if prodAIRatelimit != nil {
-		prodEndpointConf.AIRatelimit = *prodAIRatelimit
-	}
-	if sandAIRatelimit != nil {
-		sandboxEndpointConf.AIRatelimit = *sandAIRatelimit
-	}
-	sandboxEndpointConf.Endpoint = sandboxURL
-	prodEndpointConf.Endpoint = prodURL
-	if endCertAvailable {
-		for _, endCert := range endpointCertList.EndpointCertData {
-			if endCert.Endpoint == sandboxURL {
-				sandboxEndpointConf.EndCertificate = EndpointCertificate{
-					Name: endCert.Alias,
-					Key:  endCert.Certificate,
-				}
-			}
-			if endCert.Endpoint == prodURL {
-				prodEndpointConf.EndCertificate = EndpointCertificate{
-					Name: endCert.Alias,
-					Key:  endCert.Certificate,
-				}
-			}
-		}
-	}
-
-	if endpointSecurityData.Sandbox.Enabled {
-		sandboxEndpointConf.EndSecurity.Enabled = true
-		if endpointSecurityData.Sandbox.Type == "apikey" {
-			sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:     strings.Join([]string{apiUniqueID, "sandbox", "secret"}, "-"),
-				In:             "Header",
-				APIKeyNameKey:  endpointSecurityData.Sandbox.APIKeyIdentifier,
-				APIKeyValueKey: "apiKey",
-			}
-		} else {
-			sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:  strings.Join([]string{apiUniqueID, "sandbox", "secret"}, "-"),
-				UsernameKey: "username",
-				PasswordKey: "password",
-			}
-		}
-	}
-
-	if endpointSecurityData.Production.Enabled {
-		prodEndpointConf.EndSecurity.Enabled = true
-		if endpointSecurityData.Production.Type == "apikey" {
-			prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:     strings.Join([]string{apiUniqueID, "production", "secret"}, "-"),
-				In:             "Header",
-				APIKeyNameKey:  endpointSecurityData.Production.APIKeyIdentifier,
-				APIKeyValueKey: "apiKey",
-			}
-		} else {
-			prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:  strings.Join([]string{apiUniqueID, "production", "secret"}, "-"),
-				UsernameKey: "username",
-				PasswordKey: "password",
-			}
-		}
-	}
-
-	epconfigs := EndpointConfigurations{}
-	if sandBoxEndpointEnabled && prodEndpointEnabled {
-		epconfigs = EndpointConfigurations{
-			Sandbox:    &sandboxEndpointConf,
-			Production: &prodEndpointConf,
-		}
-	} else if sandBoxEndpointEnabled {
-		epconfigs = EndpointConfigurations{
-			Sandbox: &sandboxEndpointConf,
-		}
-	} else if prodEndpointEnabled {
-		epconfigs = EndpointConfigurations{
-			Production: &prodEndpointConf,
-		}
-	}
-	return epconfigs
-}
-
 // GenerateCRs takes the .apk-conf, api definition, vHost and the organization for a particular API and then generate and returns
 // the relavant CRD set as a zip
-func GenerateCRs(apkConf string, apiDefinition string, certContainer CertContainer, k8ResourceGenEndpoint string, organizationID string) (*K8sArtifacts, error) {
+func GenerateCRs(apkConf string, apiDefinition string, certContainer transformer.CertContainer, k8ResourceGenEndpoint string, organizationID string) (*K8sArtifacts, error) {
 	k8sArtifact := K8sArtifacts{HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute), GQLRoutes: make(map[string]*dpv1alpha2.GQLRoute), Backends: make(map[string]*dpv1alpha2.Backend), Scopes: make(map[string]*dpv1alpha1.Scope), Authentication: make(map[string]*dpv1alpha2.Authentication), APIPolicies: make(map[string]*dpv1alpha3.APIPolicy), InterceptorServices: make(map[string]*dpv1alpha1.InterceptorService), ConfigMaps: make(map[string]*corev1.ConfigMap), Secrets: make(map[string]*corev1.Secret), RateLimitPolicies: make(map[string]*dpv1alpha1.RateLimitPolicy), AIRateLimitPolicies: make(map[string]*dpv1alpha3.AIRateLimitPolicy)}
 	if apkConf == "" {
 		logger.LoggerTransformer.Error("Empty apk-conf parameter provided. Unable to generate CRDs.")
@@ -960,8 +284,97 @@ func GenerateCRs(apkConf string, apiDefinition string, certContainer CertContain
 	return &k8sArtifact, nil
 }
 
+// createEndpointSecrets creates and links the secret CRs need to be created for handling the endpoint security
+func createEndpointSecrets(secretData transformer.EndpointSecurityConfig, k8sArtifact *K8sArtifacts) {
+	createSecret := func(environment string, username, password string, apiKeyValue string, securityType string) {
+		var secret corev1.Secret
+		if securityType == "apikey" {
+			secret = corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      strings.Join([]string{k8sArtifact.API.Name, environment, "secret"}, "-"),
+					Namespace: k8sArtifact.API.Namespace,
+					Labels:    make(map[string]string),
+				},
+				Data: map[string][]byte{
+					"apiKey": []byte(apiKeyValue),
+				},
+			}
+		} else {
+			secret = corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      strings.Join([]string{k8sArtifact.API.Name, environment, "secret"}, "-"),
+					Namespace: k8sArtifact.API.Namespace,
+					Labels:    make(map[string]string),
+				},
+				Data: map[string][]byte{
+					"username": []byte(username),
+					"password": []byte(password),
+				},
+			}
+		}
+		logger.LoggerTransformer.Debugf("New Secret Data for %s: %v", environment, secret)
+		k8sArtifact.Secrets[secret.ObjectMeta.Name] = &secret
+	}
+
+	if secretData.Production.Enabled {
+		if secretData.Production.Username == "" || secretData.Production.Password == "" {
+			createSecret("production", secretData.Production.Username, secretData.Production.Password, secretData.Production.APIKeyValue, secretData.Production.Type)
+		}
+	}
+
+	if secretData.Sandbox.Enabled {
+		createSecret("sandbox", secretData.Sandbox.Username, secretData.Sandbox.Password, secretData.Sandbox.APIKeyValue, secretData.Sandbox.Type)
+	}
+}
+
+// createConfigMaps returns a marshalled yaml of ConfigMap kind after adding the given values
+func createConfigMaps(certFiles map[string]string, k8sArtifact *K8sArtifacts) {
+	for confKey, confValue := range certFiles {
+		pathSegments := strings.Split(confKey, ".")
+		configName := pathSegments[0]
+
+		//TODO: Have to take the version, namespace as parameters instead of hardcoding
+		cm := corev1.ConfigMap{}
+		cm.APIVersion = "v1"
+		cm.Kind = "ConfigMap"
+		cm.ObjectMeta.Name = k8sArtifact.API.Name + "-" + configName
+
+		if cm.ObjectMeta.Labels == nil {
+			cm.ObjectMeta.Labels = make(map[string]string)
+		}
+
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
+		}
+		apimCert := confValue
+		// Remove "-----BEGIN CERTIFICATE-----" and "-----END CERTIFICATE-----" strings
+		pemCert := strings.ReplaceAll(apimCert, "-----BEGIN CERTIFICATE-----", "")
+		pemCert = strings.ReplaceAll(pemCert, "-----END CERTIFICATE-----", "")
+		pemCert = strings.TrimSpace(pemCert)
+		// Decode the Base64 encoded certificate content
+		decodedCert, err := base64.StdEncoding.DecodeString(pemCert)
+		logger.LoggerTransformer.Debugf("Decoded Certificate: %v", decodedCert)
+		if err != nil {
+			logger.LoggerTransformer.Errorf("Error decoding the certificate: %v", err)
+		}
+		cm.Data[confKey] = string(decodedCert)
+		certConfigMap := &cm
+
+		logger.LoggerTransformer.Debugf("New ConfigMap Data: %v", *certConfigMap)
+		k8sArtifact.ConfigMaps[certConfigMap.ObjectMeta.Name] = certConfigMap
+	}
+}
+
 // UpdateCRS cr update
-func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]Environment, organizationID string, apiUUID string, revisionID string, namespace string, configuredRateLimitPoliciesMap map[string]eventHub.RateLimitPolicy) {
+func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]transformer.Environment, organizationID string, apiUUID string, revisionID string, namespace string, configuredRateLimitPoliciesMap map[string]eventHub.RateLimitPolicy) {
 	addOrganization(k8sArtifact, organizationID)
 	addRevisionAndAPIUUID(k8sArtifact, apiUUID, revisionID)
 	for _, environment := range *environments {
@@ -1111,93 +524,4 @@ func generateSHA1Hash(input string) string {
 	h := sha1.New() /* #nosec */
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-// createConfigMaps returns a marshalled yaml of ConfigMap kind after adding the given values
-func createConfigMaps(certFiles map[string]string, k8sArtifact *K8sArtifacts) {
-	for confKey, confValue := range certFiles {
-		pathSegments := strings.Split(confKey, ".")
-		configName := pathSegments[0]
-
-		//TODO: Have to take the version, namespace as parameters instead of hardcoding
-		cm := corev1.ConfigMap{}
-		cm.APIVersion = "v1"
-		cm.Kind = "ConfigMap"
-		cm.ObjectMeta.Name = k8sArtifact.API.Name + "-" + configName
-
-		if cm.ObjectMeta.Labels == nil {
-			cm.ObjectMeta.Labels = make(map[string]string)
-		}
-
-		if cm.Data == nil {
-			cm.Data = make(map[string]string)
-		}
-		apimCert := confValue
-		// Remove "-----BEGIN CERTIFICATE-----" and "-----END CERTIFICATE-----" strings
-		pemCert := strings.ReplaceAll(apimCert, "-----BEGIN CERTIFICATE-----", "")
-		pemCert = strings.ReplaceAll(pemCert, "-----END CERTIFICATE-----", "")
-		pemCert = strings.TrimSpace(pemCert)
-		// Decode the Base64 encoded certificate content
-		decodedCert, err := base64.StdEncoding.DecodeString(pemCert)
-		logger.LoggerTransformer.Debugf("Decoded Certificate: %v", decodedCert)
-		if err != nil {
-			logger.LoggerTransformer.Errorf("Error decoding the certificate: %v", err)
-		}
-		cm.Data[confKey] = string(decodedCert)
-		certConfigMap := &cm
-
-		logger.LoggerTransformer.Debugf("New ConfigMap Data: %v", *certConfigMap)
-		k8sArtifact.ConfigMaps[certConfigMap.ObjectMeta.Name] = certConfigMap
-	}
-}
-
-// createEndpointSecrets creates and links the secret CRs need to be created for handling the endpoint security
-func createEndpointSecrets(secretData EndpointSecurityConfig, k8sArtifact *K8sArtifacts) {
-	createSecret := func(environment string, username, password string, apiKeyValue string, securityType string) {
-		var secret corev1.Secret
-		if securityType == "apikey" {
-			secret = corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Secret",
-					APIVersion: "v1",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      strings.Join([]string{k8sArtifact.API.Name, environment, "secret"}, "-"),
-					Namespace: k8sArtifact.API.Namespace,
-					Labels:    make(map[string]string),
-				},
-				Data: map[string][]byte{
-					"apiKey": []byte(apiKeyValue),
-				},
-			}
-		} else {
-			secret = corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Secret",
-					APIVersion: "v1",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      strings.Join([]string{k8sArtifact.API.Name, environment, "secret"}, "-"),
-					Namespace: k8sArtifact.API.Namespace,
-					Labels:    make(map[string]string),
-				},
-				Data: map[string][]byte{
-					"username": []byte(username),
-					"password": []byte(password),
-				},
-			}
-		}
-		logger.LoggerTransformer.Debugf("New Secret Data for %s: %v", environment, secret)
-		k8sArtifact.Secrets[secret.ObjectMeta.Name] = &secret
-	}
-
-	if secretData.Production.Enabled {
-		if secretData.Production.Username == "" || secretData.Production.Password == "" {
-			createSecret("production", secretData.Production.Username, secretData.Production.Password, secretData.Production.APIKeyValue, secretData.Production.Type)
-		}
-	}
-
-	if secretData.Sandbox.Enabled {
-		createSecret("sandbox", secretData.Sandbox.Username, secretData.Sandbox.Password, secretData.Sandbox.APIKeyValue, secretData.Sandbox.Type)
-	}
 }
