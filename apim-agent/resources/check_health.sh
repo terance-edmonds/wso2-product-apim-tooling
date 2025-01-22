@@ -17,7 +17,15 @@
 
 # Debugging: Print out the values of variables
 echo "APIM_AGENT_GRPC_PORT: ${APIM_AGENT_GRPC_PORT}"
+echo "APIM_AGENT_SERVER_NAME: ${APIM_AGENT_SERVER_NAME}"
+echo "APIM_AGENT_PUBLIC_CERT_PATH: ${APIM_AGENT_PUBLIC_CERT_PATH}"
+echo "APIM_AGENT_PRIVATE_KEY_PATH: ${APIM_AGENT_PRIVATE_KEY_PATH}"
 
 # Run grpc_health_probe with debugging information
 grpc_health_probe -addr "127.0.0.1:${APIM_AGENT_GRPC_PORT}" \
+    -tls \
+    -tls-ca-cert "${APIM_AGENT_PUBLIC_CERT_PATH}" \
+    -tls-client-cert "${APIM_AGENT_PUBLIC_CERT_PATH}" \
+    -tls-client-key "${APIM_AGENT_PRIVATE_KEY_PATH}" \
+    -tls-server-name ${APIM_AGENT_SERVER_NAME} \
     -connect-timeout=3s

@@ -25,6 +25,7 @@ import (
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	logger "github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/agent"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,7 +71,7 @@ var (
 )
 
 // handleNotification to process
-func handleNotification(c client.Client, agent types.Agent) {
+func handleNotification(c client.Client, agent agent.Agent) {
 	conf, _ := config.ReadConfigs()
 	for d := range msg.NotificationChannel {
 		var notification msg.EventNotification
@@ -89,7 +90,7 @@ func handleNotification(c client.Client, agent types.Agent) {
 	logger.LoggerMessaging.Infof("handle: deliveries channel closed")
 }
 
-func processNotificationEvent(conf *config.Config, notification *msg.EventNotification, c client.Client, agent types.Agent) error {
+func processNotificationEvent(conf *config.Config, notification *msg.EventNotification, c client.Client, agent agent.Agent) error {
 	var eventType string
 	var decodedByte, err = base64.StdEncoding.DecodeString(notification.Event.PayloadData.Event)
 	if err != nil {

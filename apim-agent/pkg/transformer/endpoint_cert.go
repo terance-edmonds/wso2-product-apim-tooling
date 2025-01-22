@@ -15,34 +15,17 @@
  *
  */
 
-package agent
+package transformer
 
-import (
-	"fmt"
-	"plugin"
+// EndpointCert holds the data belongs to a single endpoint certificate configuration
+type EndpointCert struct {
+	Alias       string `json:"alias"`
+	Endpoint    string `json:"endpoint"`
+	Certificate string `json:"certificate"`
+	TenantID    int    `json:"tenantId"`
+}
 
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/agent"
-)
-
-// loadAgent loads the agent plugin from .so file
-func loadAgent(path string) (agent.Agent, error) {
-	// Load the plugin
-	plug, err := plugin.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("error loading plugin: %w", err)
-	}
-
-	// Look up the `AgentPlugin` symbol
-	sym, err := plug.Lookup("AgentPlugin")
-	if err != nil {
-		return nil, fmt.Errorf("error finding symbol: %w", err)
-	}
-
-	// Assert the symbol to the Agent interface
-	agent, ok := sym.(agent.Agent)
-	if !ok {
-		return nil, fmt.Errorf("invalid plugin type")
-	}
-
-	return agent, nil
+// EndpointCertDescriptor contains data related to one or more endpoint certificates for an API
+type EndpointCertDescriptor struct {
+	EndpointCertData []EndpointCert `json:"data"`
 }

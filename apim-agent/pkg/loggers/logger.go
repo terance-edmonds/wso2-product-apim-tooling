@@ -32,20 +32,22 @@ When you add a new logger instance add the related package name as a constant
 
 // package name constants
 const (
-	pkgMsg       = "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
-	pkgHealth    = "github.com/wso2/product-apim-tooling/apim-agent/pkg/health"
-	pkgTLSUtils  = "github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
-	pkgUtils     = "github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
-	pkgMgtServer = "github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
+	pkgMsg         = "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
+	pkgHealth      = "github.com/wso2/product-apim-tooling/apim-agent/pkg/health"
+	pkgTLSUtils    = "github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
+	pkgUtils       = "github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
+	pkgMgtServer   = "github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
+	pkgTransformer = "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 )
 
 // logger package references
 var (
-	LoggerMsg       logging.Log
-	LoggerHealth    logging.Log
-	LoggerTLSUtils  logging.Log
-	LoggerUtils     logging.Log
-	LoggerMgtServer logging.Log
+	LoggerMsg         logging.Log
+	LoggerHealth      logging.Log
+	LoggerTLSUtils    logging.Log
+	LoggerUtils       logging.Log
+	LoggerMgtServer   logging.Log
+	LoggerTransformer logging.Log
 )
 
 func init() {
@@ -59,5 +61,6 @@ func UpdateLoggers() {
 	LoggerTLSUtils = logging.InitPackageLogger(pkgTLSUtils)
 	LoggerUtils = logging.InitPackageLogger(pkgUtils)
 	LoggerMgtServer = logging.InitPackageLogger(pkgMgtServer)
+	LoggerTransformer = logging.InitPackageLogger(pkgTransformer)
 	logrus.Info("Updated loggers")
 }

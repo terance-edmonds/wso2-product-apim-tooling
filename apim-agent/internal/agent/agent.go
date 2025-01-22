@@ -20,25 +20,46 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/wso2/apk/common-go-libs/loggers"
+	"github.com/wso2/apk/common-go-libs/pkg/discovery/api/wso2/discovery/service/apkmgt"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	logger "github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
 	logging "github.com/wso2/product-apim-tooling/apim-agent/internal/logging"
 	"github.com/wso2/product-apim-tooling/apim-agent/internal/messaging"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/health"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/metrics"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
+
+	healthservice "github.com/wso2/apk/adapter/pkg/health/api/wso2/health/service"
+)
+
+var (
+	debug       bool
+	onlyLogging bool
+
+	port     uint
+	alsPort  uint
+	restPort uint
+
+	mode string
 )
 
 const (
@@ -47,11 +68,21 @@ const (
 	grpcMaxConcurrentStreams = 1000000
 )
 
+func init() {
+	flag.BoolVar(&debug, "debug", true, "Use debug logging")
+	flag.BoolVar(&onlyLogging, "onlyLogging", false, "Only demo AccessLogging Service")
+	flag.UintVar(&port, "port", 18000, "Management server port")
+	flag.UintVar(&alsPort, "als", 18090, "Accesslog server port")
+	flag.StringVar(&mode, "ads", ads, "Management server type (ads, grpc, rest)")
+	flag.UintVar(&restPort, "rest_port", 18001, "Rest server port")
+}
+
 // Run starts the Event listener and gateway agent.
 func Run(conf *config.Config) {
 	agent, err := loadAgent(conf.Agent.PluginPath)
 	if err != nil {
 		logger.LoggerMessaging.Errorf("Error occurred while loading the agent plugin %v. ", err)
+		return
 	}
 
 	sig := make(chan os.Signal, 2)
@@ -86,6 +117,7 @@ func Run(conf *config.Config) {
 	// run agent specific functions
 	logger.LoggerAgent.Info("PreRunning gateway specific agent...")
 	agent.PreRun(conf, scheme)
+	logger.LoggerAgent.Info("PreRunning complete...")
 
 	options := ctrl.Options{
 		Scheme:                 scheme,
@@ -129,8 +161,59 @@ func Run(conf *config.Config) {
 
 	health.NotificationListenerService.SetStatus(true)
 
-	// run apim agent grpc server health service
-	RunGRPCServer()
+	var grpcOptions []grpc.ServerOption
+	grpcOptions = append(grpcOptions, grpc.KeepaliveParams(
+		keepalive.ServerParameters{
+			Time:    time.Duration(5 * time.Minute),
+			Timeout: time.Duration(20 * time.Second),
+		}),
+		grpc.MaxConcurrentStreams(grpcMaxConcurrentStreams),
+	)
+	publicKeyLocation, privateKeyLocation, truststoreLocation := config.GetKeyLocations()
+	cert, err := config.GetServerCertificate(publicKeyLocation, privateKeyLocation)
+
+	caCertPool := config.GetTrustedCertPool(truststoreLocation)
+
+	if err == nil {
+		grpcOptions = append(grpcOptions, grpc.Creds(
+			credentials.NewTLS(&tls.Config{
+				Certificates: []tls.Certificate{cert},
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				ClientCAs:    caCertPool,
+			}),
+		))
+	} else {
+		logger.LoggerAgent.Warn("failed to initiate the ssl context: ", err)
+		panic(err)
+	}
+
+	grpcOptions = append(grpcOptions, grpc.KeepaliveParams(
+		keepalive.ServerParameters{
+			Time:    time.Duration(5 * time.Minute),
+			Timeout: time.Duration(20 * time.Second),
+		}),
+	)
+	grpcServer := grpc.NewServer(grpcOptions...)
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		logger.LoggerAgent.ErrorC(logging.PrintError(logging.Error1100, logging.BLOCKER, "Failed to listen on port: %v, error: %v", port, err.Error()))
+	}
+	apkmgt.RegisterEventStreamServiceServer(grpcServer, &managementserver.EventServer{})
+	// register health service
+	healthservice.RegisterHealthServer(grpcServer, &health.Server{})
+	logger.LoggerAgent.Info("port: ", port, " APK agent Listening for gRPC connections")
+
+	go managementserver.StartInternalServer(restPort)
+
+	go func() {
+		logger.LoggerAgent.Info("Starting GRPC server.")
+		health.CommonControllerGrpcService.SetStatus(true)
+		if err = grpcServer.Serve(lis); err != nil {
+			health.CommonControllerGrpcService.SetStatus(false)
+			logger.LoggerAgent.ErrorC(logging.PrintError(logging.Error1101, logging.BLOCKER, "Failed to start GRPC server, error: %v", err.Error()))
+		}
+	}()
 
 	// run agent specific functions
 	logger.LoggerAgent.Info("Running gateway specific agent...")

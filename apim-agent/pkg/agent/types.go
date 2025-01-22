@@ -15,7 +15,7 @@
  *
  */
 
-package types
+package agent
 
 import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
