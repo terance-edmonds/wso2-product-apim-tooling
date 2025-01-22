@@ -36,6 +36,7 @@ var (
 
 // Service components to be set health status
 const (
+	ApimAgentGrpcService        service = "apk.apim.agent.internal.ApimAgentGrpcService"
 	NotificationListenerService service = "apk.apim.agent.internal.NotificationListenerService"
 )
 

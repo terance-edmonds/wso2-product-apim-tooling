@@ -129,6 +129,9 @@ func Run(conf *config.Config) {
 
 	health.NotificationListenerService.SetStatus(true)
 
+	// run apim agent grpc server health service
+	RunGRPCServer()
+
 	// run agent specific functions
 	logger.LoggerAgent.Info("Running gateway specific agent...")
 	agent.Run(conf, mgr)
