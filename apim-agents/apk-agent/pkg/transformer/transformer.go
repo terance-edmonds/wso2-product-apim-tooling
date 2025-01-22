@@ -48,8 +48,8 @@ import (
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	eventHub "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
-	logger "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/constants"
+	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/loggers"
 	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/managementserver"
 	k8Yaml "sigs.k8s.io/yaml"
 

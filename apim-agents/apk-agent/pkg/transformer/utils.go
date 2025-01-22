@@ -28,7 +28,7 @@ import (
 	"io"
 	"strings"
 
-	logger "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
+	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/loggers"
 )
 
 // DecodeAPIArtifact decodes a zip-encoded API payload, extracting API details like JSON, Swagger, and deployment configuration.

@@ -35,26 +35,16 @@ When you add a new logger instance add the related package name as a constant
 
 // package name constants
 const (
-	pkgAgent        = "github.com/wso2/product-apim-tooling/apim-agent/internal/agent"
-	pkgK8sClient    = "github.com/wso2/product-apim-tooling/apim-agent/internal/k8sclient"
-	pkgMapper       = "github.com/wso2/product-apim-tooling/apim-agent/internal/mapper"
-	pkgMessaging    = "github.com/wso2/product-apim-tooling/apim-agent/internal/messaging"
-	pkgNotifier     = "github.com/wso2/product-apim-tooling/apim-agent/internal/notifier"
-	pkgSynchronizer = "github.com/wso2/product-apim-tooling/apim-agent/internal/synchronizer"
-	pkgUtils        = "github.com/wso2/product-apim-tooling/apim-agent/internal/utils"
-	pkgEventhub     = "github.com/wso2/product-apim-tooling/apim-agent/internal/eventhub"
+	pkgAgent     = "github.com/wso2/product-apim-tooling/apim-agent/internal/agent"
+	pkgMessaging = "github.com/wso2/product-apim-tooling/apim-agent/internal/messaging"
+	pkgUtils     = "github.com/wso2/product-apim-tooling/apim-agent/internal/utils"
 )
 
 // logger package references
 var (
-	LoggerNotifier     logging.Log
-	LoggerK8sClient    logging.Log
-	LoggerMapper       logging.Log
-	LoggerMessaging    logging.Log
-	LoggerSynchronizer logging.Log
-	LoggerUtils        logging.Log
-	LoggerAgent        logging.Log
-	LoggerEventhub     logging.Log
+	LoggerMessaging logging.Log
+	LoggerUtils     logging.Log
+	LoggerAgent     logging.Log
 )
 
 func init() {
@@ -64,13 +54,8 @@ func init() {
 
 // UpdateLoggers initializes the logger package references
 func UpdateLoggers() {
-	LoggerNotifier = logging.InitPackageLogger(pkgNotifier)
-	LoggerK8sClient = logging.InitPackageLogger(pkgK8sClient)
-	LoggerMapper = logging.InitPackageLogger(pkgMapper)
 	LoggerMessaging = logging.InitPackageLogger(pkgMessaging)
-	LoggerSynchronizer = logging.InitPackageLogger(pkgSynchronizer)
 	LoggerUtils = logging.InitPackageLogger(pkgUtils)
 	LoggerAgent = logging.InitPackageLogger(pkgAgent)
-	LoggerEventhub = logging.InitPackageLogger(pkgEventhub)
 	logrus.Info("Updated loggers")
 }

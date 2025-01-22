@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
+	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/loggers"
 )
 
 type worker struct {

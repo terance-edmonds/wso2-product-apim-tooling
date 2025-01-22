@@ -73,4 +73,7 @@ import-export-cli/utils/coverage.out
 import-export-cli/utils/coverage.html
 import-export-cli/integration/coverage.txt
 
+# Build binaries
+amd64
+arm64
 # ==================

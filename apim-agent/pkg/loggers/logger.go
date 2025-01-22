@@ -32,31 +32,20 @@ When you add a new logger instance add the related package name as a constant
 
 // package name constants
 const (
-	pkgAuth        = "github.com/wso2/product-apim-tooling/apim-agent/pkg/auth"
-	pkgMsg         = "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
-	pkgHealth      = "github.com/wso2/product-apim-tooling/apim-agent/pkg/health"
-	pkgTLSUtils    = "github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
-	pkgUtils       = "github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
-	pkgAdapter     = "github.com/wso2/apk/adapter/pkg/adapter"
-	pkgSync        = "github.com/wso2/product-apim-tooling/apim-agent/pkg/synchronizer"
-	pkgSoapUtils   = "github.com/wso2/apk/adapter/pkg/soaputils"
-	pkgTransformer = "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
-	pkgMgtServer   = "github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
+	pkgMsg       = "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
+	pkgHealth    = "github.com/wso2/product-apim-tooling/apim-agent/pkg/health"
+	pkgTLSUtils  = "github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
+	pkgUtils     = "github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
+	pkgMgtServer = "github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 )
 
 // logger package references
 var (
-	LoggerAuth         logging.Log
-	LoggerMsg          logging.Log
-	LoggerHealth       logging.Log
-	LoggerTLSUtils     logging.Log
-	LoggerUtils        logging.Log
-	LoggerAdapter      logging.Log
-	LoggerSync         logging.Log
-	LoggerSoapUtils    logging.Log
-	LoggerSubscription logging.Log
-	LoggerTransformer  logging.Log
-	LoggerMgtServer    logging.Log
+	LoggerMsg       logging.Log
+	LoggerHealth    logging.Log
+	LoggerTLSUtils  logging.Log
+	LoggerUtils     logging.Log
+	LoggerMgtServer logging.Log
 )
 
 func init() {
@@ -65,15 +54,10 @@ func init() {
 
 // UpdateLoggers initializes the logger package references
 func UpdateLoggers() {
-	LoggerAuth = logging.InitPackageLogger(pkgAuth)
 	LoggerMsg = logging.InitPackageLogger(pkgMsg)
 	LoggerHealth = logging.InitPackageLogger(pkgHealth)
 	LoggerTLSUtils = logging.InitPackageLogger(pkgTLSUtils)
 	LoggerUtils = logging.InitPackageLogger(pkgUtils)
-	LoggerAdapter = logging.InitPackageLogger(pkgAdapter)
-	LoggerSync = logging.InitPackageLogger(pkgSync)
-	LoggerSoapUtils = logging.InitPackageLogger(pkgSoapUtils)
-	LoggerTransformer = logging.InitPackageLogger(pkgTransformer)
 	LoggerMgtServer = logging.InitPackageLogger(pkgMgtServer)
 	logrus.Info("Updated loggers")
 }
