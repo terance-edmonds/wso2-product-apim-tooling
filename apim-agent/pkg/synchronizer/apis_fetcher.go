@@ -34,8 +34,8 @@ import (
 	"time"
 
 	parser "github.com/mitchellh/mapstructure"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/auth"
-	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/loggers"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/auth"
+	logger "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 )
 
 const (

@@ -224,7 +224,7 @@ func HandleApplicationEvents(data []byte, eventType string) {
 	}
 }
 
-// HandleSubscriptionRelatedEvents to process subscription related events
+// HandleSubscriptionEvents to process subscription related events
 func HandleSubscriptionEvents(data []byte, eventType string) {
 	var subscriptionEvent msg.SubscriptionEvent
 	subEventErr := json.Unmarshal([]byte(string(data)), &subscriptionEvent)
@@ -274,7 +274,7 @@ func HandleSubscriptionEvents(data []byte, eventType string) {
 	}
 }
 
-// HandlePolicyRelatedEvents to process policy related events
+// HandlePolicyEvents to process policy related events
 func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 	var policyEvent msg.PolicyInfo
 	policyEventErr := json.Unmarshal([]byte(string(data)), &policyEvent)

@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
+// Agent defines the pluggable agent structure
 type Agent struct{}
 
 // PreRun handles any prerequisites before agent Run
@@ -47,13 +48,13 @@ func (a Agent) HandleApplicationEvents(data []byte, eventType string) {
 	events.HandleApplicationEvents(data, eventType)
 }
 
-// HandleSubscriptionRelatedEvents to process subscription related events
+// HandleSubscriptionEvents to process subscription related events
 func (a Agent) HandleSubscriptionEvents(data []byte, eventType string) {
 	fmt.Println("Triggered: HandleSubscriptionEvents")
 	events.HandleSubscriptionEvents(data, eventType)
 }
 
-// HandlePolicyRelatedEvents to process policy related events
+// HandlePolicyEvents to process policy related events
 func (a Agent) HandlePolicyEvents(data []byte, eventType string, client client.Client) {
 	fmt.Println("Triggered: HandlePolicyEvents")
 	events.HandlePolicyEvents(data, eventType, client)
@@ -65,4 +66,5 @@ func (a Agent) HandleAIProviderEvents(data []byte, eventType string, client clie
 	events.HandleAIProviderEvents(data, eventType, client)
 }
 
+// AgentPlugin exports the agent as a variable
 var AgentPlugin Agent

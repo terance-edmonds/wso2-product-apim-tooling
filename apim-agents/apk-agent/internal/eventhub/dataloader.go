@@ -28,13 +28,13 @@ import (
 
 	dpv1alpha3 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha3"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	pkgAuth "github.com/wso2/product-apim-tooling/apim-agent/pkg/auth"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
 	internalutils "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/utils"
-	pkgAuth "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/auth"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

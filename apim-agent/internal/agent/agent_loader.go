@@ -21,12 +21,14 @@ import (
 	"fmt"
 	"plugin"
 
+	"github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/agent"
 )
 
 // loadAgent loads the agent plugin from .so file
 func loadAgent(path string) (agent.Agent, error) {
 	// Load the plugin
+	loggers.LoggerAgent.Printf("Loading agent binary from path: %v", path)
 	plug, err := plugin.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("error loading plugin: %w", err)

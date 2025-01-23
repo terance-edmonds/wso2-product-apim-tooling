@@ -28,15 +28,11 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"archive/zip"
-	"bytes"
-	"strings"
-
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
+	api "github.com/wso2/product-apim-tooling/apim-agent/pkg/api"
+	sync "github.com/wso2/product-apim-tooling/apim-agent/pkg/synchronizer"
 	transformer "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
-	sync "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/synchronizer"
 	apkTransformer "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -56,121 +52,57 @@ func init() {
 func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Client) (*[]string, error) {
 	// Populate data from config.
 	apis := make([]string, 0)
-	envs := conf.ControlPlane.EnvironmentLabels
-
-	// Create a channel for the byte slice (response from the APIs from control plane)
-	c := make(chan sync.SyncAPIResponse)
-
-	//Get API details.
-	if apiUUID != nil {
-		GetAPI(c, apiUUID, envs, sync.RuntimeArtifactEndpoint, true)
-	} else {
-		GetAPI(c, nil, envs, sync.RuntimeArtifactEndpoint, true)
+	apiResult, err := api.FetchAPIsOnEvent(conf, apiUUID, k8sClient)
+	if err != nil {
+		return nil, err
 	}
-	data := <-c
-	logger.LoggerUtils.Debugf("Receiving data for an API: %v", apiUUID)
-	if data.Resp != nil {
-		if data.Found {
-			// Reading the root zip
-			zipReader, err := zip.NewReader(bytes.NewReader(data.Resp), int64(len(data.Resp)))
 
-			// apiFiles represents zipped API files fetched from API Manager
-			apiFiles := make(map[string]*zip.File)
-			// Read the .zip files within the root apis.zip and add apis to apiFiles array.
-			for _, file := range zipReader.File {
-				apiFiles[file.Name] = file
-				logger.LoggerUtils.Debugf("API file found: " + file.Name)
-				// Todo: Read the apis.zip and extract the api.zip,deployments.json
-			}
-			if err != nil {
-				logger.LoggerUtils.Errorf("Error while reading zip: %v", err)
-				return nil, err
-			}
-			deploymentJSON, exists := apiFiles["deployments.json"]
-			if !exists {
-				logger.LoggerUtils.Errorf("deployments.json not found")
-				return nil, err
-			}
-			deploymentJSONBytes, err := transformer.ReadContent(deploymentJSON)
-			if err != nil {
-				logger.LoggerUtils.Errorf("Error while decoding the API Project Artifact: %v", err)
-				return nil, err
-			}
-			deploymentDescriptor, err := transformer.ProcessDeploymentDescriptor(deploymentJSONBytes)
-			if err != nil {
-				logger.LoggerUtils.Errorf("Error while decoding the API Project Artifact: %v", err)
-				return nil, err
-			}
-			apiDeployments := deploymentDescriptor.Data.Deployments
-			if apiDeployments != nil {
-				for _, apiDeployment := range *apiDeployments {
-					apiZip, exists := apiFiles[apiDeployment.APIFile]
-					if exists {
-						artifact, decodingError := transformer.DecodeAPIArtifact(apiZip)
-						if decodingError != nil {
-							logger.LoggerUtils.Errorf("Error while decoding the API Project Artifact: %v", decodingError)
-							return nil, err
-						}
-
-						config, apiUUID, revisionID, configuredRateLimitPoliciesMap, endpointSecurityData, api, prodAIRL, sandAIRL, apkErr := transformer.GenerateConf(artifact.APIJson, artifact.CertArtifact, apiDeployment.OrganizationID)
-						if prodAIRL == nil {
-							// Try to delete production AI ratelimit for this api
-							k8sclientUtil.DeleteAIRatelimitPolicy(generateSHA1HexHash(api.Name, api.Version, "production"), k8sClient)
-						}
-						if sandAIRL == nil {
-							// Try to delete production AI ratelimit for this api
-							k8sclientUtil.DeleteAIRatelimitPolicy(generateSHA1HexHash(api.Name, api.Version, "sandbox"), k8sClient)
-						}
-						if apkErr != nil {
-							logger.LoggerUtils.Errorf("Error while generating APK-Conf: %v", apkErr)
-							return nil, err
-						}
-						logger.LoggerUtils.Debugf("APK Conf: %v", config)
-						certContainer := transformer.CertContainer{
-							ClientCertObj:   artifact.CertMeta,
-							EndpointCertObj: artifact.EndpointCertMeta,
-							SecretData:      endpointSecurityData,
-						}
-						k8ResourceEndpoint := conf.DataPlane.K8ResourceEndpoint
-						crResponse, err := apkTransformer.GenerateCRs(config, artifact.Schema, certContainer, k8ResourceEndpoint, apiDeployment.OrganizationID)
-						if err != nil {
-							logger.LoggerUtils.Errorf("Error occured in receiving the updated CRDs: %v", err)
-							return nil, err
-						}
-						apkTransformer.UpdateCRS(crResponse, apiDeployment.Environments, apiDeployment.OrganizationID, apiUUID, fmt.Sprint(revisionID), "namespace", configuredRateLimitPoliciesMap)
-						mapperUtil.MapAndCreateCR(*crResponse, k8sClient)
-						apis = append(apis, apiUUID)
-						logger.LoggerUtils.Info("API applied successfully.\n")
+	if apiResult != nil {
+		apis = *apiResult.APIs
+		if apiResult.APIDeployments != nil {
+			for _, apiDeployment := range *apiResult.APIDeployments {
+				apiZip, exists := apiResult.APIFiles[apiDeployment.APIFile]
+				if exists {
+					artifact, decodingError := transformer.DecodeAPIArtifact(apiZip)
+					if decodingError != nil {
+						logger.LoggerUtils.Errorf("Error while decoding the API Project Artifact: %v", decodingError)
+						return nil, err
 					}
+
+					apkConf, apiUUID, revisionID, configuredRateLimitPoliciesMap, endpointSecurityData, api, prodAIRL, sandAIRL, apkErr := transformer.GenerateConf(artifact.APIJson, artifact.CertArtifact, apiDeployment.OrganizationID)
+					if prodAIRL == nil {
+						// Try to delete production AI ratelimit for this api
+						k8sclientUtil.DeleteAIRatelimitPolicy(generateSHA1HexHash(api.Name, api.Version, "production"), k8sClient)
+					}
+					if sandAIRL == nil {
+						// Try to delete production AI ratelimit for this api
+						k8sclientUtil.DeleteAIRatelimitPolicy(generateSHA1HexHash(api.Name, api.Version, "sandbox"), k8sClient)
+					}
+					if apkErr != nil {
+						logger.LoggerUtils.Errorf("Error while generating APK-Conf: %v", apkErr)
+						return nil, err
+					}
+					logger.LoggerUtils.Debugf("APK Conf: %v", apkConf)
+					certContainer := transformer.CertContainer{
+						ClientCertObj:   artifact.CertMeta,
+						EndpointCertObj: artifact.EndpointCertMeta,
+						SecretData:      endpointSecurityData,
+					}
+					k8ResourceEndpoint := conf.DataPlane.K8ResourceEndpoint
+					crResponse, err := apkTransformer.GenerateCRs(apkConf, artifact.Schema, certContainer, k8ResourceEndpoint, apiDeployment.OrganizationID)
+					if err != nil {
+						logger.LoggerUtils.Errorf("Error occured in receiving the updated CRDs: %v", err)
+						return nil, err
+					}
+					apkTransformer.UpdateCRS(crResponse, apiDeployment.Environments, apiDeployment.OrganizationID, apiUUID, fmt.Sprint(revisionID), "namespace", configuredRateLimitPoliciesMap)
+					mapperUtil.MapAndCreateCR(*crResponse, k8sClient)
+					apis = append(apis, apiUUID)
+					logger.LoggerUtils.Info("API applied successfully.\n")
 				}
-				return &apis, nil
 			}
-		} else {
-			logger.LoggerUtils.Info("API not found.")
-			return &apis, nil
 		}
-	} else if data.ErrorCode == 204 {
-		logger.LoggerUtils.Infof("No API Artifacts are available in the control plane for the envionments :%s",
-			strings.Join(envs, ", "))
-		return &[]string{}, nil
-	} else if data.ErrorCode >= 400 && data.ErrorCode < 500 {
-		logger.LoggerUtils.ErrorC(logging.ErrorDetails{
-			Message:   fmt.Sprintf("Error occurred when retrieving APIs from control plane(unrecoverable error): %v", data.Err.Error()),
-			Severity:  logging.CRITICAL,
-			ErrorCode: 1106,
-		})
-		return nil, data.Err
-	} else {
-		// Keep the iteration still until all the envrionment response properly.
-		logger.LoggerUtils.ErrorC(logging.ErrorDetails{
-			Message:   fmt.Sprintf("Error occurred while fetching data from control plane: %v ..retrying..", data.Err),
-			Severity:  logging.MINOR,
-			ErrorCode: 1107,
-		})
-		//health.SetControlPlaneRestAPIStatus(false)
-		sync.RetryFetchingAPIs(c, data, sync.RuntimeArtifactEndpoint, true)
+		return &apis, nil
 	}
-	logger.LoggerUtils.Info("Fetching API for an event is completed...")
 	return nil, nil
 }
 

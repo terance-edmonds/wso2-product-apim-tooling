@@ -81,7 +81,7 @@ func init() {
 func Run(conf *config.Config) {
 	agent, err := loadAgent(conf.Agent.PluginPath)
 	if err != nil {
-		logger.LoggerMessaging.Errorf("Error occurred while loading the agent plugin %v. ", err)
+		logger.LoggerAgent.Errorf("Agent loader error: %v. ", err)
 		return
 	}
 
