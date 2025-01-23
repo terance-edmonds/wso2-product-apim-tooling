@@ -26,38 +26,10 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	logger "github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/agent"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/constants"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-// constant variables
-const (
-	apiEventType                = "API"
-	applicationEventType        = "APPLICATION"
-	subscriptionEventType       = "SUBSCRIPTION"
-	scopeEvenType               = "SCOPE"
-	policyEventType             = "POLICY"
-	removeAPIFromGateway        = "REMOVE_API_FROM_GATEWAY"
-	deployAPIToGateway          = "DEPLOY_API_IN_GATEWAY"
-	applicationRegistration     = "APPLICATION_REGISTRATION_CREATE"
-	removeApplicationKeyMapping = "REMOVE_APPLICATION_KEYMAPPING"
-	apiLifeCycleChange          = "LIFECYCLE_CHANGE"
-	applicationCreate           = "APPLICATION_CREATE"
-	applicationUpdate           = "APPLICATION_UPDATE"
-	applicationDelete           = "APPLICATION_DELETE"
-	subscriptionCreate          = "SUBSCRIPTIONS_CREATE"
-	subscriptionUpdate          = "SUBSCRIPTIONS_UPDATE"
-	subscriptionDelete          = "SUBSCRIPTIONS_DELETE"
-	policyCreate                = "POLICY_CREATE"
-	policyUpdate                = "POLICY_UPDATE"
-	policyDelete                = "POLICY_DELETE"
-	blockedStatus               = "BLOCKED"
-	apiUpdate                   = "API_UPDATE"
-	aiProviderEventType         = "LLM_PROVIDER"
-	aiProviderCreate            = "LLM_PROVIDER_CREATE"
-	aiProviderUpdate            = "LLM_PROVIDER_UPDATE"
-	aiProviderDelete            = "LLM_PROVIDER_DELETE"
 )
 
 // var variables
@@ -104,19 +76,19 @@ func processNotificationEvent(conf *config.Config, notification *msg.EventNotifi
 
 	AgentMode := conf.Agent.Mode
 	eventType = notification.Event.PayloadData.EventType
-	if strings.Contains(eventType, apiLifeCycleChange) {
+	if strings.Contains(eventType, constants.APILifeCycleChange) {
 		if AgentMode == "CPtoDP" {
 			agent.HandleLifeCycleEvents(decodedByte)
 		}
-	} else if strings.Contains(eventType, apiEventType) {
+	} else if strings.Contains(eventType, constants.APIEventType) {
 		if AgentMode == "CPtoDP" {
 			agent.HandleAPIEvents(decodedByte, eventType, conf, c)
 		}
-	} else if strings.Contains(eventType, applicationEventType) {
+	} else if strings.Contains(eventType, constants.ApplicationEventType) {
 		agent.HandleApplicationEvents(decodedByte, eventType)
-	} else if strings.Contains(eventType, subscriptionEventType) {
+	} else if strings.Contains(eventType, constants.SubscriptionEventType) {
 		agent.HandleSubscriptionEvents(decodedByte, eventType)
-	} else if strings.Contains(eventType, policyEventType) {
+	} else if strings.Contains(eventType, constants.PolicyEventType) {
 		var policyEvent msg.PolicyInfo
 		policyEventErr := json.Unmarshal([]byte(string(decodedByte)), &policyEvent)
 		if policyEventErr != nil {
@@ -125,7 +97,7 @@ func processNotificationEvent(conf *config.Config, notification *msg.EventNotifi
 		if AgentMode == "CPtoDP" || strings.EqualFold(policyEvent.PolicyType, "SUBSCRIPTION") {
 			agent.HandlePolicyEvents(decodedByte, eventType, c)
 		}
-	} else if strings.Contains(eventType, aiProviderEventType) {
+	} else if strings.Contains(eventType, constants.AIProviderEventType) {
 		agent.HandleAIProviderEvents(decodedByte, eventType, c)
 	}
 	// other events will ignore including HEALTH_CHECK event
