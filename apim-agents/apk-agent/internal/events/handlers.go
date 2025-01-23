@@ -9,6 +9,7 @@ import (
 	"github.com/wso2/apk/common-go-libs/constants"
 	event "github.com/wso2/apk/common-go-libs/pkg/discovery/api/wso2/discovery/subscription"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	eventConstants "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/constants"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
@@ -20,35 +21,6 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/synchronizer"
 	internalutils "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-// constant variables
-const (
-	apiEventType                = "API"
-	applicationEventType        = "APPLICATION"
-	subscriptionEventType       = "SUBSCRIPTION"
-	scopeEvenType               = "SCOPE"
-	policyEventType             = "POLICY"
-	removeAPIFromGateway        = "REMOVE_API_FROM_GATEWAY"
-	deployAPIToGateway          = "DEPLOY_API_IN_GATEWAY"
-	applicationRegistration     = "APPLICATION_REGISTRATION_CREATE"
-	removeApplicationKeyMapping = "REMOVE_APPLICATION_KEYMAPPING"
-	apiLifeCycleChange          = "LIFECYCLE_CHANGE"
-	applicationCreate           = "APPLICATION_CREATE"
-	applicationUpdate           = "APPLICATION_UPDATE"
-	applicationDelete           = "APPLICATION_DELETE"
-	subscriptionCreate          = "SUBSCRIPTIONS_CREATE"
-	subscriptionUpdate          = "SUBSCRIPTIONS_UPDATE"
-	subscriptionDelete          = "SUBSCRIPTIONS_DELETE"
-	policyCreate                = "POLICY_CREATE"
-	policyUpdate                = "POLICY_UPDATE"
-	policyDelete                = "POLICY_DELETE"
-	blockedStatus               = "BLOCKED"
-	apiUpdate                   = "API_UPDATE"
-	aiProviderEventType         = "LLM_PROVIDER"
-	aiProviderCreate            = "LLM_PROVIDER_CREATE"
-	aiProviderUpdate            = "LLM_PROVIDER_UPDATE"
-	aiProviderDelete            = "LLM_PROVIDER_DELETE"
 )
 
 // var variables
@@ -125,7 +97,7 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 	logger.LoggerMessaging.Infof("API event data %v", apiEventObj)
 
 	//Per each revision, synchronization should happen.
-	if strings.EqualFold(deployAPIToGateway, apiEvent.Event.Type) {
+	if strings.EqualFold(eventConstants.DeployAPIToGateway, apiEvent.Event.Type) {
 		go internalutils.FetchAPIsOnEvent(conf, &apiEvent.UUID, c)
 	}
 
@@ -135,11 +107,11 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 		}
 		// removeFromGateway event with multiple labels could only appear when the API is subjected
 		// to delete. Hence we could simply delete after checking against just one iteration.
-		if strings.EqualFold(removeAPIFromGateway, apiEvent.Event.Type) {
+		if strings.EqualFold(eventConstants.RemoveAPIFromGateway, apiEvent.Event.Type) {
 			internalk8sClient.UndeployAPICR(apiEvent.UUID, c)
 			break
 		}
-		if strings.EqualFold(deployAPIToGateway, apiEvent.Event.Type) {
+		if strings.EqualFold(eventConstants.DeployAPIToGateway, apiEvent.Event.Type) {
 			conf, _ := config.ReadConfigs()
 			configuredEnvs := conf.ControlPlane.EnvironmentLabels
 			if len(configuredEnvs) == 0 {
@@ -166,8 +138,8 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 
 // HandleApplicationEvents to process application related events
 func HandleApplicationEvents(data []byte, eventType string) {
-	if strings.EqualFold(applicationRegistration, eventType) ||
-		strings.EqualFold(removeApplicationKeyMapping, eventType) {
+	if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) ||
+		strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
 		var applicationRegistrationEvent msg.ApplicationRegistrationEvent
 		appRegEventErr := json.Unmarshal([]byte(string(data)), &applicationRegistrationEvent)
 		if appRegEventErr != nil {
@@ -187,7 +159,7 @@ func HandleApplicationEvents(data []byte, eventType string) {
 			Organization:          applicationRegistrationEvent.TenantDomain,
 			EnvID:                 "Default",
 		}
-		if strings.EqualFold(applicationRegistration, eventType) {
+		if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) {
 			event := event.Event{Type: constants.ApplicationKeyMappingCreated,
 				Uuid:                  uuid.New().String(),
 				TimeStamp:             applicationRegistrationEvent.TimeStamp,
@@ -195,7 +167,7 @@ func HandleApplicationEvents(data []byte, eventType string) {
 			}
 			managementserver.AddApplicationKeyMapping(managementserver.ApplicationKeyMapping{ApplicationUUID: applicationKeyMappingEvent.ApplicationUUID, SecurityScheme: applicationKeyMappingEvent.SecurityScheme, ApplicationIdentifier: applicationKeyMappingEvent.ApplicationIdentifier, KeyType: applicationKeyMappingEvent.KeyType, Organization: applicationKeyMappingEvent.Organization, EnvID: applicationKeyMappingEvent.EnvID})
 			go utils.SendEvent(&event)
-		} else if strings.EqualFold(removeApplicationKeyMapping, eventType) {
+		} else if strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
 			event := event.Event{Type: constants.ApplicationKeyMappingDeleted,
 				Uuid:                  uuid.New().String(),
 				TimeStamp:             applicationRegistrationEvent.TimeStamp,
@@ -232,15 +204,15 @@ func HandleApplicationEvents(data []byte, eventType string) {
 			Organization: applicationEvent.TenantDomain,
 			Attributes:   marshalAppAttributes(applicationEvent.Attributes),
 		}
-		if applicationEvent.Event.Type == applicationCreate {
+		if applicationEvent.Event.Type == eventConstants.ApplicationCreate {
 			event := event.Event{Type: constants.ApplicationCreated, Uuid: uuid.New().String(), TimeStamp: applicationEvent.TimeStamp, Application: &applicationGrpcEvent}
 			managementserver.AddApplication(managementserver.Application{UUID: applicationGrpcEvent.Uuid, Name: applicationGrpcEvent.Name, Owner: applicationGrpcEvent.Owner, Organization: applicationGrpcEvent.Organization, Attributes: applicationGrpcEvent.Attributes})
 			utils.SendEvent(&event)
-		} else if applicationEvent.Event.Type == applicationUpdate {
+		} else if applicationEvent.Event.Type == eventConstants.ApplicationUpdate {
 			event := event.Event{Type: constants.ApplicationUpdated, Uuid: uuid.New().String(), TimeStamp: applicationEvent.TimeStamp, Application: &applicationGrpcEvent}
 			managementserver.UpdateApplication(applicationGrpcEvent.Uuid, managementserver.Application{UUID: applicationGrpcEvent.Uuid, Name: applicationGrpcEvent.Name, Owner: applicationGrpcEvent.Owner, Organization: applicationGrpcEvent.Organization, Attributes: applicationGrpcEvent.Attributes})
 			utils.SendEvent(&event)
-		} else if applicationEvent.Event.Type == applicationDelete {
+		} else if applicationEvent.Event.Type == eventConstants.ApplicationDelete {
 			event := event.Event{Type: constants.ApplicationDeleted, Uuid: uuid.New().String(), TimeStamp: applicationEvent.TimeStamp, Application: &applicationGrpcEvent}
 			managementserver.DeleteApplication(applicationGrpcEvent.Uuid)
 			utils.SendEvent(&event)
@@ -277,14 +249,14 @@ func HandleSubscriptionEvents(data []byte, eventType string) {
 		RatelimitTier: synchronizer.GetSha1Value(fmt.Sprintf("%s-%s", subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)),
 	}
 	applicationMapping := event.ApplicationMapping{Uuid: utils.GetUniqueIDOfApplicationMapping(subscriptionEvent.ApplicationUUID, subscriptionEvent.SubscriptionUUID), ApplicationRef: subscriptionEvent.ApplicationUUID, SubscriptionRef: subscriptionEvent.SubscriptionUUID, Organization: subscriptionEvent.TenantDomain}
-	if subscriptionEvent.Event.Type == subscriptionCreate {
+	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
 		subsEvent := event.Event{Uuid: uuid.New().String(), Type: constants.SubscriptionCreated, TimeStamp: subscriptionEvent.TimeStamp, Subscription: &subscription}
 		managementserver.AddSubscription(managementserver.Subscription{UUID: subscription.Uuid, SubStatus: subscription.SubStatus, Organization: subscription.Organization, RateLimit: subscription.RatelimitTier, SubscribedAPI: &managementserver.SubscribedAPI{Name: subscription.SubscribedApi.Name, Version: subscription.SubscribedApi.Version}})
 		go utils.SendEvent(&subsEvent)
 		applicationMappingEvent := event.Event{Uuid: utils.GetUniqueIDOfApplicationMapping(subscriptionEvent.ApplicationUUID, subscriptionEvent.SubscriptionUUID), Type: constants.ApplicationMappingCreated, TimeStamp: subscriptionEvent.TimeStamp, ApplicationMapping: &applicationMapping}
 		managementserver.AddApplicationMapping(managementserver.ApplicationMapping{UUID: applicationMapping.Uuid, ApplicationRef: applicationMapping.ApplicationRef, SubscriptionRef: applicationMapping.SubscriptionRef, Organization: applicationMapping.Organization})
 		go utils.SendEvent(&applicationMappingEvent)
-	} else if subscriptionEvent.Event.Type == subscriptionUpdate {
+	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionUpdate {
 		subsEvent := event.Event{Uuid: uuid.New().String(), Type: constants.SubscriptionUpdated, TimeStamp: subscriptionEvent.TimeStamp, Subscription: &subscription}
 		managementserver.UpdateSubscription(subscription.Uuid, managementserver.Subscription{UUID: subscription.Uuid, SubStatus: subscription.SubStatus, Organization: subscription.Organization, RateLimit: subscription.RatelimitTier, SubscribedAPI: &managementserver.SubscribedAPI{Name: subscription.SubscribedApi.Name, Version: subscription.SubscribedApi.Version}})
 		go utils.SendEvent(&subsEvent)
@@ -292,7 +264,7 @@ func HandleSubscriptionEvents(data []byte, eventType string) {
 		managementserver.UpdateApplicationMapping(applicationMappingEvent.Uuid, managementserver.ApplicationMapping{UUID: applicationMappingEvent.Uuid, ApplicationRef: applicationMapping.ApplicationRef, SubscriptionRef: applicationMapping.SubscriptionRef, Organization: applicationMapping.Organization})
 		go utils.SendEvent(&applicationMappingEvent)
 
-	} else if subscriptionEvent.Event.Type == subscriptionDelete {
+	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionDelete {
 		subsEvent := event.Event{Uuid: uuid.New().String(), Type: constants.SubscriptionDeleted, TimeStamp: subscriptionEvent.TimeStamp, Subscription: &subscription}
 		managementserver.DeleteSubscription(subscription.Uuid)
 		go utils.SendEvent(&subsEvent)
@@ -311,7 +283,7 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 		return
 	}
 	// TODO: Handle policy events
-	if strings.EqualFold(eventType, policyCreate) {
+	if strings.EqualFold(eventType, eventConstants.PolicyCreate) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
 			synchronizer.FetchRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c)
@@ -323,7 +295,7 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		}
-	} else if strings.EqualFold(eventType, policyUpdate) {
+	} else if strings.EqualFold(eventType, eventConstants.PolicyUpdate) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
 			synchronizer.FetchRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c)
@@ -335,7 +307,7 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		}
-	} else if strings.EqualFold(eventType, policyDelete) {
+	} else if strings.EqualFold(eventType, eventConstants.PolicyDelete) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
 			managementserver.DeleteRateLimitPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
@@ -352,7 +324,7 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 		}
 	}
 
-	if strings.EqualFold(applicationEventType, policyEvent.PolicyType) {
+	if strings.EqualFold(eventConstants.ApplicationEventType, policyEvent.PolicyType) {
 		applicationPolicy := types.ApplicationPolicy{ID: policyEvent.PolicyID, TenantID: policyEvent.Event.TenantID,
 			Name: policyEvent.PolicyName, QuotaType: policyEvent.QuotaType}
 
@@ -371,7 +343,7 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 		// }
 		// xds.UpdateEnforcerApplicationPolicies(applicationPolicyList)
 
-	} else if strings.EqualFold(subscriptionEventType, policyEvent.PolicyType) {
+	} else if strings.EqualFold(eventConstants.SubscriptionEventType, policyEvent.PolicyType) {
 		var subscriptionPolicyEvent msg.SubscriptionPolicyEvent
 		subPolicyErr := json.Unmarshal([]byte(string(data)), &subscriptionPolicyEvent)
 		if subPolicyErr != nil {
@@ -413,17 +385,17 @@ func HandleAIProviderEvents(data []byte, eventType string, c client.Client) {
 		return
 	}
 
-	if strings.EqualFold(aiProviderCreate, eventType) {
+	if strings.EqualFold(eventConstants.AIProviderCreate, eventType) {
 		logger.LoggerMessaging.Infof("Create for AI Provider: %s for tenant: %s", aiProviderEvent.Name, aiProviderEvent.Event.TenantDomain)
 		synchronizer.FetchAIProvidersOnEvent(aiProviderEvent.Name, aiProviderEvent.APIVersion, aiProviderEvent.Event.TenantDomain, c, false)
 		aiProviders := managementserver.GetAllAIProviders()
 		logger.LoggerMessaging.Debugf("AI Providers Internal Map: %v", aiProviders)
-	} else if strings.EqualFold(aiProviderUpdate, eventType) {
+	} else if strings.EqualFold(eventConstants.AIProviderUpdate, eventType) {
 		logger.LoggerMessaging.Infof("Update for AI Provider: %s for tenant: %s", aiProviderEvent.Name, aiProviderEvent.Event.TenantDomain)
 		synchronizer.FetchAIProvidersOnEvent(aiProviderEvent.Name, aiProviderEvent.APIVersion, aiProviderEvent.Event.TenantDomain, c, false)
 		aiProviders := managementserver.GetAllAIProviders()
 		logger.LoggerMessaging.Debugf("AI Providers Internal Map: %v", aiProviders)
-	} else if strings.EqualFold(aiProviderDelete, eventType) {
+	} else if strings.EqualFold(eventConstants.AIProviderDelete, eventType) {
 		logger.LoggerMessaging.Infof("Deletion for AI Provider: %s for tenant: %s", aiProviderEvent.Name, aiProviderEvent.Event.TenantDomain)
 		aiProvider := managementserver.GetAIProvider(aiProviderEvent.ID)
 		k8sclient.DeleteAIProviderCR(aiProvider.ID, c)
