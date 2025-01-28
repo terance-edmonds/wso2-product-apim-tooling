@@ -32,9 +32,9 @@ When you add a new logger instance add the related package name as a constant
 
 // package name constants
 const (
-	pkgUtils       = "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/utils"
-	pkgSync        = "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/synchronizer"
-	pkgTransformer = "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/transformer"
+	pkgUtils       = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/utils"
+	pkgSync        = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/synchronizer"
+	pkgTransformer = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/transformer"
 )
 
 // logger package references

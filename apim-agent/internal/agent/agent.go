@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -112,7 +113,7 @@ func Run(conf *config.Config) {
 	var probeAddr string
 	var scheme = runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(gwapiv1.AddToScheme(scheme))
+	utilruntime.Must(gwapiv1.Install(scheme))
 
 	// run agent specific functions
 	logger.LoggerAgent.Info("PreRunning gateway specific agent...")
@@ -214,6 +215,20 @@ func Run(conf *config.Config) {
 			logger.LoggerAgent.ErrorC(logging.PrintError(logging.Error1101, logging.BLOCKER, "Failed to start GRPC server, error: %v", err.Error()))
 		}
 	}()
+
+	// Start the manager in a goroutine
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logger.LoggerAgent.Info("starting manager")
+		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+			logger.LoggerAgent.Warnf("problem running manager: %v", err)
+		}
+	}()
+
+	AgentMode := conf.Agent.Mode
+	logger.LoggerAgent.Infof("Agent Mode: %v", AgentMode)
 
 	// run agent specific functions
 	logger.LoggerAgent.Info("Running gateway specific agent...")

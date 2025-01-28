@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	"github.com/wso2/product-apim-tooling/apim-kong-agent/internal/events"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/events"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -20,7 +20,7 @@ func (a Agent) PreRun(conf *config.Config, scheme *runtime.Scheme) {
 
 // Run initiates the gateway specific agent
 func (a Agent) Run(conf *config.Config, mgr manager.Manager) {
-	// No operation
+
 }
 
 // ProcessEvents handles gateway specific functions need to be triggered on event processing

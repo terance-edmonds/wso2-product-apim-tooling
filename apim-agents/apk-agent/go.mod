@@ -1,4 +1,4 @@
-module github.com/wso2/product-apim-tooling/apim-apk-agent
+module github.com/wso2/product-apim-tooling/apim-agents/apk-agent
 
 go 1.23.3
 
@@ -108,3 +108,5 @@ require (
 )
 
 replace github.com/wso2/product-apim-tooling/apim-agent => ../../apim-agent
+
+replace github.com/wso2/product-apim-tooling/apim-agents/apk-agent => ./

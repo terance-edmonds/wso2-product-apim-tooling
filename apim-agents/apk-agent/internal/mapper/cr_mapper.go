@@ -25,9 +25,9 @@ package mapper
 
 import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	internalk8sClient "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sClient"
-	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/transformer"
+	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
+	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

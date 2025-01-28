@@ -22,7 +22,7 @@ plugins {
 apply from: "$rootDir/../../common-gradle-scripts/go.gradle"
 
 release {
-    tagTemplate = 'apim-apk-agent-$version'
+    tagTemplate = 'apim-kong-agent-$version'
 
     git {
         requireBranch = project.hasProperty('releaseBranch') ? project.releaseBranch : 'master'
@@ -39,7 +39,7 @@ allprojects {
 ext {
     pluginOutputName = project.hasProperty('pluginOutputName') ? project.pluginOutputName : 'agent.so'
     pluginOutputPath = project.hasProperty('pluginOutputPath') ? project.pluginOutputPath : '../../apim-agents/agents'
-    pluginSourceFile = project.hasProperty('pluginSourceFile') ? project.pluginSourceFile : 'main.go'
+    pluginSourceFile = project.hasProperty('pluginSourceFile') ? project.pluginSourceFile : './main.go'
 }
 
 tasks.register('go_test', Exec) {
@@ -55,13 +55,11 @@ tasks.named('go_revive_run').configure {
     finalizedBy go_test
 }
 
-
 tasks.register('go_run_build', Exec) {
     dependsOn go_revive_run
     dependsOn go_vet
     println("Running go build")
-    commandLine 'go', 'build', '-buildmode=plugin', '-o', "${pluginOutputPath}/${pluginOutputName}", pluginSourceFile
-    outputs.file("${pluginOutputPath}/${pluginOutputName}")
+    commandLine 'env', 'CGO_ENABLED=1', 'CC=gcc', 'go', 'build', '-buildmode=plugin', '-o', "${pluginOutputPath}/${pluginOutputName}", pluginSourceFile
 }
 
 task build {

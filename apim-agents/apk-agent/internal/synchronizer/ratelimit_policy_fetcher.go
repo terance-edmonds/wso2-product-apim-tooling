@@ -36,8 +36,8 @@ import (
 	eventhubTypes "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	sync "github.com/wso2/product-apim-tooling/apim-agent/pkg/synchronizer"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
-	k8sclient "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sClient"
-	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
+	k8sclient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
+	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

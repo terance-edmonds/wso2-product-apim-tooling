@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/agent"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/events"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/messaging"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/agent"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/events"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/messaging"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"

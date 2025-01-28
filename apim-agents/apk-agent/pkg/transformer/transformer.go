@@ -47,7 +47,7 @@ import (
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
-	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/loggers"
+	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/loggers"
 	k8Yaml "sigs.k8s.io/yaml"
 
 	"gopkg.in/yaml.v2"

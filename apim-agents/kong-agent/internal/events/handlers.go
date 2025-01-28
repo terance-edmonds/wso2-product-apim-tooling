@@ -2,11 +2,17 @@ package events
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	eventConstants "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/constants"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
-	logger "github.com/wso2/product-apim-tooling/apim-kong-agent/internal/loggers"
+	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/k8sClient"
+	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
+	internalutils "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -49,7 +55,62 @@ func HandleLifeCycleEvents(data []byte) {
 
 // HandleAPIEvents to process api related data
 func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c client.Client) {
+	var (
+		apiEvent         msg.APIEvent
+		currentTimeStamp int64 = apiEvent.Event.TimeStamp
+	)
 
+	apiEventErr := json.Unmarshal([]byte(string(data)), &apiEvent)
+	if apiEventErr != nil {
+		logger.LoggerMessaging.ErrorC(logging.ErrorDetails{
+			Message:   fmt.Sprintf("Error occurred while unmarshalling API event data %v", apiEventErr),
+			Severity:  logging.MAJOR,
+			ErrorCode: 2004,
+		})
+		return
+	}
+
+	if !belongsToTenant(apiEvent.TenantDomain) {
+		apiName := apiEvent.APIName
+		if apiEvent.APIName == "" {
+			apiName = apiEvent.Name
+		}
+		apiVersion := apiEvent.Version
+		if apiEvent.Version == "" {
+			apiVersion = apiEvent.Version
+		}
+		logger.LoggerMessaging.Debugf("API event for the API %s:%s is dropped due to having non related tenantDomain : %s",
+			apiName, apiVersion, apiEvent.TenantDomain)
+		return
+	}
+
+	apiEventObj := types.API{UUID: apiEvent.UUID, APIID: apiEvent.APIID, Name: apiEvent.APIName,
+		Context: apiEvent.APIContext, Version: apiEvent.APIVersion, Provider: apiEvent.APIProvider}
+
+	logger.LoggerMessaging.Infof("API event data %v", apiEventObj)
+
+	//Per each revision, synchronization should happen.
+	if strings.EqualFold(eventConstants.DeployAPIToGateway, apiEvent.Event.Type) {
+		go internalutils.FetchAPIsOnEvent(conf, &apiEvent.UUID, c)
+	}
+
+	for _, env := range apiEvent.GatewayLabels {
+		if isLaterEvent(apiListTimeStampMap, apiEvent.UUID+":"+env, currentTimeStamp) {
+			break
+		}
+	}
+
+	for _, env := range apiEvent.GatewayLabels {
+		if isLaterEvent(apiListTimeStampMap, apiEvent.UUID+":"+env, currentTimeStamp) {
+			break
+		}
+		// removeFromGateway event with multiple labels could only appear when the API is subjected
+		// to delete. Hence we could simply delete after checking against just one iteration.
+		if strings.EqualFold(eventConstants.RemoveAPIFromGateway, apiEvent.Event.Type) {
+			internalk8sClient.UndeployAPICRs(apiEvent.UUID, c)
+			break
+		}
+	}
 }
 
 // HandleApplicationEvents to process application related events

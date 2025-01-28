@@ -32,9 +32,9 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
-	internalk8sClient "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sClient"
-	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
-	internalutils "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/utils"
+	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
+	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
+	internalutils "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

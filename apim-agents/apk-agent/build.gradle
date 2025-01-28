@@ -55,13 +55,11 @@ tasks.named('go_revive_run').configure {
     finalizedBy go_test
 }
 
-
 tasks.register('go_run_build', Exec) {
     dependsOn go_revive_run
     dependsOn go_vet
     println("Running go build")
     commandLine 'go', 'build', '-buildmode=plugin', '-o', "${pluginOutputPath}/${pluginOutputName}", pluginSourceFile
-    outputs.file("${pluginOutputPath}/${pluginOutputName}")
 }
 
 task build {

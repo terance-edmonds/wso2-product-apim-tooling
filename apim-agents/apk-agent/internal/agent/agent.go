@@ -19,19 +19,15 @@
 package agent
 
 import (
-	"sync"
-
 	cpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/cp/v1alpha2"
 	dpv1alpha1 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha1"
 	dpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha2"
 	dpv1alpha3 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha3"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/eventhub"
-	logger "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/loggers"
-	"github.com/wso2/product-apim-tooling/apim-apk-agent/internal/synchronizer"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/eventhub"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/synchronizer"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
@@ -47,19 +43,7 @@ func PreRun(conf *config.Config, scheme *runtime.Scheme) {
 
 // Run starts the GRPC server and Rest API server.
 func Run(conf *config.Config, mgr manager.Manager) {
-	// Start the manager in a goroutine
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		logger.LoggerAgent.Info("starting manager")
-		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-			logger.LoggerAgent.Warnf("problem running manager: %v", err)
-		}
-	}()
-
 	AgentMode := conf.Agent.Mode
-	logger.LoggerAgent.Infof("Agent Mode: %v", AgentMode)
 
 	if AgentMode == "CPtoDP" {
 		// Load initial Policy data from control plane

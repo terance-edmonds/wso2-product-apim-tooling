@@ -32,13 +32,13 @@ When you add a new logger instance add the related package name as a constant
 
 // package name constants
 const (
-	pkgAgent        = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/agent"
-	pkgK8sClient    = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/k8sclient"
-	pkgMapper       = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/mapper"
-	pkgMessaging    = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/messaging"
-	pkgSynchronizer = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/synchronizer"
-	pkgUtils        = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/utils"
-	pkgEventhub     = "github.com/wso2/product-apim-tooling/apim-apk-agent/internal/eventhub"
+	pkgAgent        = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/agent"
+	pkgK8sClient    = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sclient"
+	pkgMapper       = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/mapper"
+	pkgMessaging    = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/messaging"
+	pkgSynchronizer = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/synchronizer"
+	pkgUtils        = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/utils"
+	pkgEventhub     = "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/eventhub"
 )
 
 // logger package references
