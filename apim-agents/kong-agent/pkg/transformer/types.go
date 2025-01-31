@@ -18,11 +18,13 @@
 package transformer
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 // K8sArtifacts k8s artifact representation of API
 type K8sArtifacts struct {
 	Namespace  string
+	Services   map[string]*corev1.Service
 	HTTPRoutes map[string]*gwapiv1.HTTPRoute
 }

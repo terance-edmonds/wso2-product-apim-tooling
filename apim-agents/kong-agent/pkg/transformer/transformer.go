@@ -29,12 +29,13 @@ import (
 	apimTransformer "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
 	"gopkg.in/yaml.v2"
+	corev1 "k8s.io/api/core/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 // GenerateCR handles the generation k8s artifacts
 func GenerateCR(api string, organizationID string) *K8sArtifacts {
-	k8sArtifact := K8sArtifacts{HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute)}
+	k8sArtifact := K8sArtifacts{HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute), Services: make(map[string]*corev1.Service)}
 	var apkConf types.APKConf
 	err := yaml.Unmarshal([]byte(api), &apkConf)
 	if err != nil {
@@ -83,11 +84,15 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 
 	for i, operations := range operationsArray {
 		logger.LoggerUtils.Infof("Generate Operations: %v\n", operations)
-		httpRoute, err := gen.GenerateHTTPRoute(*apkConf, organization, gatewayConfigurations, operations, &endpoints, endpointType, uniqueID, i)
+		httpK8sArtifact, err := gen.GenerateHTTPRoute(*apkConf, organization, gatewayConfigurations, operations, &endpoints, endpointType, uniqueID, i)
 		if err != nil {
 			logger.LoggerUtils.Errorf("Error while generating http route: Error: %+v. \n", err)
 		} else {
+			httpRoute := httpK8sArtifact.HTTPRoute
 			k8sArtifact.HTTPRoutes[httpRoute.ObjectMeta.Name] = httpRoute
+			for key, service := range httpK8sArtifact.Services {
+				k8sArtifact.Services[key] = service
+			}
 		}
 	}
 }
@@ -100,6 +105,12 @@ func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]apimTransformer.Enviro
 		httproute.ObjectMeta.Labels[k8sOrganizationField] = organizationHash
 		httproute.ObjectMeta.Labels[k8APIUuidField] = apiUUID
 		httproute.ObjectMeta.Labels[k8RevisionField] = revisionID
+	}
+	for _, service := range k8sArtifact.Services {
+		service.ObjectMeta.Labels = make(map[string]string)
+		service.ObjectMeta.Labels[k8sOrganizationField] = organizationHash
+		service.ObjectMeta.Labels[k8APIUuidField] = apiUUID
+		service.ObjectMeta.Labels[k8RevisionField] = revisionID
 	}
 }
 

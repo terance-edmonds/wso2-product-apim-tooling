@@ -26,13 +26,22 @@ import (
 
 // Agent defines the functions of a pluggable agent
 type Agent interface {
+	// PreRun handles any prerequisites before agent Run
 	PreRun(conf *config.Config, scheme *runtime.Scheme)
+	// Run initiates the gateway specific agent
 	Run(conf *config.Config, manager manager.Manager)
+	// ProcessEvents handles gateway specific functions need to be triggered on event processing
 	ProcessEvents(conf *config.Config, client client.Client)
+	// HandleLifeCycleEvents handles the events of an api through out the life cycle
 	HandleLifeCycleEvents(data []byte)
+	// HandleAPIEvents to process api related data
 	HandleAPIEvents(data []byte, eventType string, conf *config.Config, client client.Client)
+	// HandleApplicationEvents to process application related events
 	HandleApplicationEvents(data []byte, eventType string)
+	// HandleSubscriptionEvents to process subscription related events
 	HandleSubscriptionEvents(data []byte, eventType string)
+	// HandlePolicyEvents to process policy related events
 	HandlePolicyEvents(data []byte, eventType string, client client.Client)
+	// HandleAIProviderEvents to process AI Provider related events
 	HandleAIProviderEvents(data []byte, eventType string, client client.Client)
 }

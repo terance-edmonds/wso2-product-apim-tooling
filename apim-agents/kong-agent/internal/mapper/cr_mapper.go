@@ -41,7 +41,14 @@ func MapAndCreateCR(k8sArtifact transformer.K8sArtifacts, k8sClient client.Clien
 	k8sArtifact.Namespace = namespace
 	for _, httpRoutes := range k8sArtifact.HTTPRoutes {
 		httpRoutes.Namespace = namespace
+		httpRoutes.ObjectMeta.Annotations = map[string]string{
+			"konghq.com/strip-path": "true",
+		}
 		internalk8sClient.DeployHTTPRouteCR(httpRoutes, k8sClient)
+	}
+	for _, service := range k8sArtifact.Services {
+		service.Namespace = namespace
+		internalk8sClient.DeployServiceCR(service, k8sClient)
 	}
 	return nil
 }
