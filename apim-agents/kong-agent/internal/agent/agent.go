@@ -15,22 +15,21 @@
  *
  */
 
-package transformer
+// Package agent contains the implementation to start the agent
+package agent
 
 import (
 	v1 "github.com/kong/kubernetes-configuration/api/configuration/v1"
-	corev1 "k8s.io/api/core/v1"
-	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
+	v1alpha1 "github.com/kong/kubernetes-configuration/api/configuration/v1alpha1"
+	v1beta1 "github.com/kong/kubernetes-configuration/api/configuration/v1beta1"
+	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 )
 
-// K8sArtifacts k8s artifact representation of API
-type K8sArtifacts struct {
-	APIUUID     string
-	Namespace   string
-	KongPlugins map[string]*v1.KongPlugin
-	Services    map[string]*corev1.Service
-	HTTPRoutes  map[string]*gwapiv1.HTTPRoute
+// PreRun prepares the agent environment and runs before Run.
+func PreRun(conf *config.Config, scheme *runtime.Scheme) {
+	utilruntime.Must(v1.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+	utilruntime.Must(v1beta1.AddToScheme(scheme))
 }
-
-// KongPluginConfig defines the type for config of a kong plugin
-type KongPluginConfig = map[string]interface{}

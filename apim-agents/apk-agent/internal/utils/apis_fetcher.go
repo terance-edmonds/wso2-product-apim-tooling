@@ -34,7 +34,6 @@ import (
 	transformer "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
 	apkTransformer "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/transformer"
-	"gopkg.in/yaml.v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	k8sclientUtil "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
@@ -83,11 +82,6 @@ func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Cli
 						logger.LoggerUtils.Errorf("Error while generating APK-Conf: %v", apkErr)
 						return nil, err
 					}
-					buf, err := yaml.Marshal(apkConf)
-					if err != nil {
-						fmt.Print("yaml failed")
-					}
-					logger.LoggerUtils.Infof("\napkConf %v\n", string(buf))
 					logger.LoggerUtils.Debugf("APK Conf: %v", apkConf)
 					certContainer := transformer.CertContainer{
 						ClientCertObj:   artifact.CertMeta,

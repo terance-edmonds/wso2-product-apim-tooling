@@ -13,6 +13,7 @@ import (
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
 	internalutils "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/utils"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -114,12 +115,108 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 }
 
 // HandleApplicationEvents to process application related events
-func HandleApplicationEvents(data []byte, eventType string) {
+func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
+	conf, _ := config.ReadConfigs()
+	configuredEnvs := conf.ControlPlane.EnvironmentLabels
+	if len(configuredEnvs) == 0 {
+		configuredEnvs = append(configuredEnvs, config.DefaultGatewayName)
+	}
 
+	if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) ||
+		strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
+		var applicationRegistrationEvent msg.ApplicationRegistrationEvent
+		appRegEventErr := json.Unmarshal([]byte(string(data)), &applicationRegistrationEvent)
+		if appRegEventErr != nil {
+			logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Application Registration event data %v", appRegEventErr)
+			return
+		}
+
+		if !belongsToTenant(applicationRegistrationEvent.TenantDomain) {
+			logger.LoggerMessaging.Debugf("Application Registration event for the Consumer Key : %s is dropped due to having non related tenantDomain : %s",
+				applicationRegistrationEvent.ConsumerKey, applicationRegistrationEvent.TenantDomain)
+			return
+		}
+
+		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationRegistrationEvent)
+		if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) {
+			logger.LoggerMessaging.Info("Application registration create")
+			// TODO: Add jwt credential to consumer
+		} else if strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
+			logger.LoggerMessaging.Info("Application registration remove")
+		}
+	} else {
+		var applicationEvent msg.ApplicationEvent
+		appEventErr := json.Unmarshal([]byte(string(data)), &applicationEvent)
+		if appEventErr != nil {
+			logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Application event data %v", appEventErr)
+			return
+		}
+
+		if !belongsToTenant(applicationEvent.TenantDomain) {
+			logger.LoggerMessaging.Debugf("Application event for the Application : %s (with uuid %s) is dropped due to having non related tenantDomain : %s",
+				applicationEvent.ApplicationName, applicationEvent.UUID, applicationEvent.TenantDomain)
+			return
+		}
+
+		logger.LoggerMessaging.Infof("Application event data %v", applicationEvent)
+
+		if isLaterEvent(applicationListTimeStampMap, fmt.Sprint(applicationEvent.ApplicationID), applicationEvent.TimeStamp) {
+			return
+		}
+
+		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationEvent)
+		if applicationEvent.Event.Type == eventConstants.ApplicationCreate {
+			// create consumer
+			consumer := transformer.CreateConsumer(applicationEvent.UUID, applicationEvent.Subscriber)
+			consumer.Namespace = conf.DataPlane.Namespace
+			// deploy consumer
+			internalk8sClient.DeployKongConsumerCR(consumer, c)
+		} else if applicationEvent.Event.Type == eventConstants.ApplicationUpdate {
+			logger.LoggerMessaging.Info("Application update")
+		} else if applicationEvent.Event.Type == eventConstants.ApplicationDelete {
+			internalk8sClient.UndeployAPPCRs(applicationEvent.UUID, c)
+		} else {
+			logger.LoggerMessaging.Warnf("Application Event Type is not recognized for the Event under "+
+				"Application UUID %s", applicationEvent.UUID)
+			return
+		}
+	}
 }
 
 // HandleSubscriptionEvents to process subscription related events
-func HandleSubscriptionEvents(data []byte, eventType string) {
+func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
+	conf, _ := config.ReadConfigs()
+	configuredEnvs := conf.ControlPlane.EnvironmentLabels
+	if len(configuredEnvs) == 0 {
+		configuredEnvs = append(configuredEnvs, config.DefaultGatewayName)
+	}
+
+	var subscriptionEvent msg.SubscriptionEvent
+	subEventErr := json.Unmarshal([]byte(string(data)), &subscriptionEvent)
+	if subEventErr != nil {
+		logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Subscription event data %v", subEventErr)
+		return
+	}
+	if !belongsToTenant(subscriptionEvent.TenantDomain) {
+		logger.LoggerMessaging.Debugf("Subscription event for the Application : %s and API %s is dropped due to having non related tenantDomain : %s",
+			subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, subscriptionEvent.TenantDomain)
+		return
+	}
+
+	if isLaterEvent(subsriptionsListTimeStampMap, fmt.Sprint(subscriptionEvent.SubscriptionID), subscriptionEvent.TimeStamp) {
+		return
+	}
+
+	logger.LoggerMessaging.Infof("===========sub \n%+v\n", subscriptionEvent)
+	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
+		credentials := []string{subscriptionEvent.APIUUID}
+		internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, c, conf, credentials)
+	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionUpdate {
+		logger.LoggerMessaging.Info("Update Sub")
+	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionDelete {
+		credentials := []string{subscriptionEvent.APIUUID}
+		internalk8sClient.RemoveKongConsumerCredential(subscriptionEvent.ApplicationUUID, c, conf, credentials)
+	}
 }
 
 // HandlePolicyEvents to process policy related events

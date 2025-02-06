@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/agent"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/events"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -15,7 +16,7 @@ type Agent struct{}
 
 // PreRun handles any prerequisites before agent Run
 func (a Agent) PreRun(conf *config.Config, scheme *runtime.Scheme) {
-	// No operation
+	agent.PreRun(conf, scheme)
 }
 
 // Run initiates the gateway specific agent
@@ -41,15 +42,15 @@ func (a Agent) HandleAPIEvents(data []byte, eventType string, conf *config.Confi
 }
 
 // HandleApplicationEvents to process application related events
-func (a Agent) HandleApplicationEvents(data []byte, eventType string) {
+func (a Agent) HandleApplicationEvents(data []byte, eventType string, client client.Client) {
 	fmt.Println("Triggered: HandleApplicationEvents")
-	events.HandleApplicationEvents(data, eventType)
+	events.HandleApplicationEvents(data, eventType, client)
 }
 
 // HandleSubscriptionEvents to process subscription related events
-func (a Agent) HandleSubscriptionEvents(data []byte, eventType string) {
+func (a Agent) HandleSubscriptionEvents(data []byte, eventType string, client client.Client) {
 	fmt.Println("Triggered: HandleSubscriptionEvents")
-	events.HandleSubscriptionEvents(data, eventType)
+	events.HandleSubscriptionEvents(data, eventType, client)
 }
 
 // HandlePolicyEvents to process policy related events

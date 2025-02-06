@@ -39,19 +39,24 @@ func MapAndCreateCR(k8sArtifact transformer.K8sArtifacts, k8sClient client.Clien
 		return &err
 	}
 	k8sArtifact.Namespace = namespace
+	// deploy httproute CRs
 	for _, httpRoutes := range k8sArtifact.HTTPRoutes {
 		httpRoutes.Namespace = namespace
-		httpRoutes.ObjectMeta.Annotations = map[string]string{
-			"konghq.com/strip-path": "true",
-		}
 		internalk8sClient.DeployHTTPRouteCR(httpRoutes, k8sClient)
 	}
+	// deploy service CRs
 	for _, service := range k8sArtifact.Services {
 		service.Namespace = namespace
 		internalk8sClient.DeployServiceCR(service, k8sClient)
 	}
+	// deploy kong plugin CRs
+	for _, kongPlugin := range k8sArtifact.KongPlugins {
+		kongPlugin.Namespace = namespace
+		internalk8sClient.DeployKongPluginCR(kongPlugin, k8sClient)
+	}
 	return nil
 }
+
 func getDeploymentNamespace(k8sArtifact transformer.K8sArtifacts) (string, error) {
 	conf, errReadConfig := config.ReadConfigs()
 	if errReadConfig != nil {

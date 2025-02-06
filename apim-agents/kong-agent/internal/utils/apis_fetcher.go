@@ -73,7 +73,7 @@ func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Cli
 					logger.LoggerUtils.Infof("APK Conf: %v", api)
 
 					// Generate CR resources
-					crResources := kongTransformer.GenerateCR(api, apiDeployment.OrganizationID)
+					crResources := kongTransformer.GenerateCR(api, apiDeployment.OrganizationID, apiUUID)
 					kongTransformer.UpdateCRS(crResources, apiDeployment.Environments, apiDeployment.OrganizationID, apiUUID, fmt.Sprint(revisionID), "namespace", configuredRateLimitPoliciesMap)
 					mapperUtil.MapAndCreateCR(*crResources, k8sClient)
 					apis = append(apis, apiUUID)

@@ -37,9 +37,9 @@ type Agent interface {
 	// HandleAPIEvents to process api related data
 	HandleAPIEvents(data []byte, eventType string, conf *config.Config, client client.Client)
 	// HandleApplicationEvents to process application related events
-	HandleApplicationEvents(data []byte, eventType string)
+	HandleApplicationEvents(data []byte, eventType string, client client.Client)
 	// HandleSubscriptionEvents to process subscription related events
-	HandleSubscriptionEvents(data []byte, eventType string)
+	HandleSubscriptionEvents(data []byte, eventType string, client client.Client)
 	// HandlePolicyEvents to process policy related events
 	HandlePolicyEvents(data []byte, eventType string, client client.Client)
 	// HandleAIProviderEvents to process AI Provider related events

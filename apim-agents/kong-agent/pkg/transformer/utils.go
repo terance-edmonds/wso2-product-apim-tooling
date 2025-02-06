@@ -20,9 +20,12 @@ package transformer
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/terance-edmonds/wso2-apk-k8s-go-lib/config/types"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 )
 
 // GetUniqueIDForAPI will generate a unique ID for newly created APIs
@@ -46,4 +49,39 @@ func GenerateOperationsMatrix(totalOperations int, maxColumns int) [][]types.Ope
 		remainingOperations -= columnsInRow
 	}
 	return operationsArray
+}
+
+// GeneratePluginRefName generates a reference name for a plugin based on the operation, target reference, and plugin name.
+func GeneratePluginRefName(operation *types.Operation, targetRef string, pluginName string) string {
+	concatenatedString := pluginName
+	if operation != nil {
+		operationTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(operation.Target+operation.Verb)))
+		concatenatedString = concatenatedString + "-" + operationTargetHash
+		return "route-" + concatenatedString + "-" + targetRef
+	}
+	serviceTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(pluginName+targetRef)))
+	concatenatedString = concatenatedString + "-" + serviceTargetHash
+	return "service-" + concatenatedString + "-" + targetRef
+}
+
+// GenerateConsumerName generates a reference name for a consumer
+func GenerateConsumerName(applicationUUID string, consumerName string) string {
+	consumerHash := fmt.Sprintf("%x", sha1.Sum([]byte(applicationUUID+consumerName)))
+	return "consumer-" + consumerHash
+}
+
+// GenerateJSON converts go struct to json
+func GenerateJSON(data KongPluginConfig) []byte {
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		loggers.LoggerUtils.Errorf("Failed to generate json. Error: %v", err)
+	}
+	return jsonBytes
+}
+
+// generateSHA1Hash returns the SHA1 hash for the given string
+func generateSHA1Hash(input string) string {
+	h := sha1.New() /* #nosec */
+	h.Write([]byte(input))
+	return hex.EncodeToString(h.Sum(nil))
 }

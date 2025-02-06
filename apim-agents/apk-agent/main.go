@@ -43,15 +43,15 @@ func (a Agent) HandleAPIEvents(data []byte, eventType string, conf *config.Confi
 }
 
 // HandleApplicationEvents to process application related events
-func (a Agent) HandleApplicationEvents(data []byte, eventType string) {
+func (a Agent) HandleApplicationEvents(data []byte, eventType string, client client.Client) {
 	fmt.Println("Triggered: HandleApplicationEvents")
-	events.HandleApplicationEvents(data, eventType)
+	events.HandleApplicationEvents(data, eventType, client)
 }
 
 // HandleSubscriptionEvents to process subscription related events
-func (a Agent) HandleSubscriptionEvents(data []byte, eventType string) {
+func (a Agent) HandleSubscriptionEvents(data []byte, eventType string, client client.Client) {
 	fmt.Println("Triggered: HandleSubscriptionEvents")
-	events.HandleSubscriptionEvents(data, eventType)
+	events.HandleSubscriptionEvents(data, eventType, client)
 }
 
 // HandlePolicyEvents to process policy related events

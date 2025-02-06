@@ -137,7 +137,7 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 }
 
 // HandleApplicationEvents to process application related events
-func HandleApplicationEvents(data []byte, eventType string) {
+func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
 	if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) ||
 		strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
 		var applicationRegistrationEvent msg.ApplicationRegistrationEvent
@@ -225,7 +225,7 @@ func HandleApplicationEvents(data []byte, eventType string) {
 }
 
 // HandleSubscriptionEvents to process subscription related events
-func HandleSubscriptionEvents(data []byte, eventType string) {
+func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 	var subscriptionEvent msg.SubscriptionEvent
 	subEventErr := json.Unmarshal([]byte(string(data)), &subscriptionEvent)
 	if subEventErr != nil {

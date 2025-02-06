@@ -33,7 +33,6 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/constants"
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/logging"
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	k8error "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -122,11 +121,6 @@ func DeployConfigMapCR(configMap *corev1.ConfigMap, k8sClient client.Client) {
 
 // DeployHTTPRouteCR applies the given HttpRoute struct to the Kubernetes cluster.
 func DeployHTTPRouteCR(httpRoute *gwapiv1.HTTPRoute, k8sClient client.Client) {
-	buf, err := yaml.Marshal(httpRoute)
-	if err != nil {
-		fmt.Print("yaml failed")
-	}
-	loggers.LoggerK8sClient.Infof("\nhttpRoute %v\n", string(buf))
 	crHTTPRoute := &gwapiv1.HTTPRoute{}
 	if err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: httpRoute.ObjectMeta.Namespace, Name: httpRoute.Name}, crHTTPRoute); err != nil {
 		if !k8error.IsNotFound(err) {
@@ -602,11 +596,6 @@ func UndeploySubscriptionAIRateLimitPolicyCR(crName string, k8sClient client.Cli
 // DeployBackendCR applies the given Backends struct to the Kubernetes cluster.
 func DeployBackendCR(backends *dpv1alpha2.Backend, k8sClient client.Client) {
 	crBackends := &dpv1alpha2.Backend{}
-	buf, err := yaml.Marshal(backends)
-	if err != nil {
-		fmt.Print("yaml failed")
-	}
-	loggers.LoggerK8sClient.Infof("\backends %v\n", string(buf))
 	if err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: backends.ObjectMeta.Namespace, Name: backends.Name}, crBackends); err != nil {
 		if !k8error.IsNotFound(err) {
 			loggers.LoggerK8sClient.Error("Unable to get Backends CR: " + err.Error())

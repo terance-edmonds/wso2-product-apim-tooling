@@ -85,9 +85,9 @@ func processNotificationEvent(conf *config.Config, notification *msg.EventNotifi
 			agent.HandleAPIEvents(decodedByte, eventType, conf, c)
 		}
 	} else if strings.Contains(eventType, constants.ApplicationEventType) {
-		agent.HandleApplicationEvents(decodedByte, eventType)
+		agent.HandleApplicationEvents(decodedByte, eventType, c)
 	} else if strings.Contains(eventType, constants.SubscriptionEventType) {
-		agent.HandleSubscriptionEvents(decodedByte, eventType)
+		agent.HandleSubscriptionEvents(decodedByte, eventType, c)
 	} else if strings.Contains(eventType, constants.PolicyEventType) {
 		var policyEvent msg.PolicyInfo
 		policyEventErr := json.Unmarshal([]byte(string(decodedByte)), &policyEvent)

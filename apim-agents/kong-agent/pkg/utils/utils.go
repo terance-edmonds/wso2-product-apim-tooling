@@ -15,22 +15,17 @@
  *
  */
 
-package transformer
+package utils
 
-import (
-	v1 "github.com/kong/kubernetes-configuration/api/configuration/v1"
-	corev1 "k8s.io/api/core/v1"
-	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
-)
+import "slices"
 
-// K8sArtifacts k8s artifact representation of API
-type K8sArtifacts struct {
-	APIUUID     string
-	Namespace   string
-	KongPlugins map[string]*v1.KongPlugin
-	Services    map[string]*corev1.Service
-	HTTPRoutes  map[string]*gwapiv1.HTTPRoute
+// FilterItems filter items
+func FilterItems(items []string, filterItems []string) []string {
+	result := []string{}
+	for _, item := range items {
+		if !slices.Contains(filterItems, item) {
+			result = append(result, item)
+		}
+	}
+	return result
 }
-
-// KongPluginConfig defines the type for config of a kong plugin
-type KongPluginConfig = map[string]interface{}
