@@ -13,6 +13,7 @@ import (
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
 	internalutils "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/utils"
+	pkgConstants "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/constants"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -140,9 +141,26 @@ func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
 		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationRegistrationEvent)
 		if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) {
 			logger.LoggerMessaging.Info("Application registration create")
-			// TODO: Add jwt credential to consumer
+			// create secret CR
+			// TODO: add the real key
+			rsaPublicKey := ``
+			jwtCredentialSecretConfig := map[string]string{
+				"algorithm":      "RS512",
+				"key":            applicationRegistrationEvent.ConsumerKey,
+				"rsa_public_key": rsaPublicKey,
+			}
+			jwtCredentialSecret := transformer.GenerateK8sCredentialSecret(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, "jwt", jwtCredentialSecretConfig)
+			jwtCredentialSecret.Namespace = conf.DataPlane.Namespace
+			// deploy CR
+			internalk8sClient.DeploySecretCR(jwtCredentialSecret, c)
+			credentials := []string{jwtCredentialSecret.ObjectMeta.Name}
+			internalk8sClient.UpdateKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, c, conf, credentials)
 		} else if strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
 			logger.LoggerMessaging.Info("Application registration remove")
+			jwtCredentialSecretName := transformer.GenerateSecretName(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, pkgConstants.KongJwtSecretName)
+			credentials := []string{jwtCredentialSecretName}
+			internalk8sClient.RemoveKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, c, conf, credentials)
+			internalk8sClient.UnDeploySecretCR(jwtCredentialSecretName, c, conf)
 		}
 	} else {
 		var applicationEvent msg.ApplicationEvent
@@ -209,7 +227,16 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 
 	logger.LoggerMessaging.Infof("===========sub \n%+v\n", subscriptionEvent)
 	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
-		credentials := []string{subscriptionEvent.APIUUID}
+		// create kong acl secret CR
+		aclCredentialSecretConfig := map[string]string{
+			"group": subscriptionEvent.APIUUID,
+		}
+		aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, "", "acl", aclCredentialSecretConfig)
+		aclCredentialSecret.Namespace = conf.DataPlane.Namespace
+		internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
+
+		// update consumer credentials
+		credentials := []string{aclCredentialSecret.ObjectMeta.Name}
 		internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, c, conf, credentials)
 	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionUpdate {
 		logger.LoggerMessaging.Info("Update Sub")

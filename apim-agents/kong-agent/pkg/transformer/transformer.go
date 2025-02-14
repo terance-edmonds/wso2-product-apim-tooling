@@ -23,11 +23,12 @@ import (
 	v1 "github.com/kong/kubernetes-configuration/api/configuration/v1"
 	"github.com/terance-edmonds/wso2-apk-k8s-go-lib/config/constants"
 	"github.com/terance-edmonds/wso2-apk-k8s-go-lib/config/types"
-	http_generator "github.com/terance-edmonds/wso2-apk-k8s-go-lib/pkg/generators/http"
+	httpGenerator "github.com/terance-edmonds/wso2-apk-k8s-go-lib/pkg/generators/http"
 	"github.com/terance-edmonds/wso2-apk-k8s-go-lib/pkg/utils"
 	eventHub "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	apimTransformer "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
+	pkgConstants "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/constants"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +38,7 @@ import (
 // GenerateCR handles the generation k8s artifacts
 func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts {
 	k8sArtifact := K8sArtifacts{APIUUID: apiUUID, HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute), Services: make(map[string]*corev1.Service), KongPlugins: map[string]*v1.KongPlugin{}}
+	kongPlugins := []string{}
 	var apkConf types.APKConf
 	err := yaml.Unmarshal([]byte(api), &apkConf)
 	if err != nil {
@@ -47,14 +49,35 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 	// Create endpoints
 	createdEndpoints := utils.GetEndpoints(apkConf)
 
+	// ACL Plugin (for subscription)
+	// create and add route restriction with Kong ACL plugin into k8s artifacts
+	if apkConf.SubscriptionValidation {
+		kongACLPlugin := createAndAddACLPlugin(&k8sArtifact, nil, "api")
+		kongPlugins = append(kongPlugins, kongACLPlugin.ObjectMeta.Name)
+	}
+
+	// Handle authentications
+	authentications := *apkConf.Authentication
+	for _, authentication := range authentications {
+		if !authentication.Enabled {
+			continue
+		}
+
+		// OAuth2 JWT Plugin (for OAuth2 jwt authentication)
+		if authentication.AuthType == pkgConstants.OAuth2 {
+			kongJwtPlugin := createAndAddJWTPlugin(&k8sArtifact, nil, "api")
+			kongPlugins = append(kongPlugins, kongJwtPlugin.ObjectMeta.Name)
+		}
+	}
+
 	// HTTPRoute
 	// Generate production http routes
 	if endpoints, ok := createdEndpoints[constants.PRODUCTION_TYPE]; ok {
-		generateHTTPRoutes(&k8sArtifact, &apkConf, organizationID, endpoints, constants.PRODUCTION_TYPE, apiUniqueID)
+		generateHTTPRoutes(&k8sArtifact, &apkConf, organizationID, endpoints, constants.PRODUCTION_TYPE, apiUniqueID, kongPlugins)
 	}
 	// Generate sandbox http routes
 	if endpoints, ok := createdEndpoints[constants.SANDBOX_TYPE]; ok {
-		generateHTTPRoutes(&k8sArtifact, &apkConf, organizationID, endpoints, constants.SANDBOX_TYPE, apiUniqueID)
+		generateHTTPRoutes(&k8sArtifact, &apkConf, organizationID, endpoints, constants.SANDBOX_TYPE, apiUniqueID, kongPlugins)
 	}
 
 	return &k8sArtifact
@@ -84,9 +107,8 @@ func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]apimTransformer.Enviro
 }
 
 // generateHTTPRoutes handles the generation of http route resources from apk conf
-func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organizationID string, endpoints types.EndpointDetails, endpointType string, uniqueID string) {
-	gen := http_generator.Generator()
-	kongPlugins := []string{}
+func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organizationID string, endpoints types.EndpointDetails, endpointType string, uniqueID string, kongPlugins []string) {
+	gen := httpGenerator.Generator()
 	organization := types.Organization{
 		Name: organizationID,
 	}
@@ -105,16 +127,6 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 		operationsArray[row][column] = (*apkConf.Operations)[i]
 		column++
 	}
-
-	// create and add route restriction with Kong ACL plugin into k8s artifacts
-	// to handle API subscriptions
-	kongACLPlugin := createAndAddACLPlugin(k8sArtifact, nil, "httproute")
-	kongPlugins = append(kongPlugins, kongACLPlugin.ObjectMeta.Name)
-
-	// create and add jwt authentication plugin
-	// to handle jwt authentication
-	// kongJwtPlugin := createAndAddJWTPlugin(k8sArtifact, nil, "jwt")
-	// kongPlugins = append(kongPlugins, kongJwtPlugin.ObjectMeta.Name)
 
 	for i, operations := range operationsArray {
 		logger.LoggerUtils.Infof("Generate Operations: %v\n", operations)
@@ -159,6 +171,7 @@ func createAndAddACLPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation
 func createAndAddJWTPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation, targetRef string) *v1.KongPlugin {
 	config := KongPluginConfig{
 		"run_on_preflight": true,
+		"key_claim_name":   "iss",
 		"header_names": []string{
 			"authorization",
 		},
@@ -195,4 +208,23 @@ func CreateConsumer(applicationUUID string, username string) *v1.KongConsumer {
 	}
 	consumer.Labels[k8APPUuidField] = applicationUUID
 	return &consumer
+}
+
+// GenerateK8sCredentialSecret handles the k8s secret generation for kong credentials
+func GenerateK8sCredentialSecret(applicationUUID string, environment string, credentialName string, data map[string]string) *corev1.Secret {
+	secret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: GenerateSecretName(applicationUUID, environment, credentialName),
+			Labels: map[string]string{
+				"konghq.com/credential": credentialName,
+			},
+		},
+		StringData: data,
+	}
+	secret.Labels[k8APPUuidField] = applicationUUID
+	return &secret
 }

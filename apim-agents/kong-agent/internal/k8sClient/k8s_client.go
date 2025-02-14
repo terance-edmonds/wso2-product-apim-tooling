@@ -142,6 +142,48 @@ func DeployKongConsumerCR(consumer *v1.KongConsumer, k8sClient client.Client) {
 	}
 }
 
+// DeploySecretCR applies the given Service struct to the Kubernetes cluster.
+func DeploySecretCR(k8sSecret *corev1.Secret, k8sClient client.Client) {
+	yamlCR, err := yaml.Marshal(k8sSecret)
+	if err != nil {
+		loggers.LoggerK8sClient.Error(err)
+	}
+	loggers.LoggerK8sClient.Infof("========== Secret\n %v \n", string(yamlCR))
+	crSecret := &corev1.Secret{}
+	if err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: k8sSecret.ObjectMeta.Namespace, Name: k8sSecret.Name}, crSecret); err != nil {
+		if !k8error.IsNotFound(err) {
+			loggers.LoggerK8sClient.Error("Unable to get Secret CR: " + err.Error())
+		}
+		if err := k8sClient.Create(context.Background(), k8sSecret); err != nil {
+			loggers.LoggerK8sClient.Error("Unable to create Secret CR: " + err.Error())
+		} else {
+			loggers.LoggerK8sClient.Info("Secret CR created: " + k8sSecret.Name)
+		}
+	} else {
+		crSecret.StringData = k8sSecret.StringData
+		if err := k8sClient.Update(context.Background(), crSecret); err != nil {
+			loggers.LoggerK8sClient.Error("Unable to update Secret CR: " + err.Error())
+		} else {
+			loggers.LoggerK8sClient.Info("Secret CR updated: " + crSecret.Name)
+		}
+	}
+}
+
+// UnDeploySecretCR removes the Secret Resources from the Kubernetes cluster based on name.
+func UnDeploySecretCR(name string, k8sClient client.Client, conf *config.Config) {
+	resource := &corev1.Secret{}
+	if err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: conf.DataPlane.Namespace, Name: name}, resource); err != nil {
+		if !k8error.IsNotFound(err) {
+			loggers.LoggerK8sClient.Error("Unable to get Secret CR: " + err.Error())
+		}
+		if err := k8sClient.Delete(context.Background(), resource, &client.DeleteOptions{}); err != nil {
+			loggers.LoggerK8sClient.Errorf("Unable to delete Secret CR: %v", err)
+		} else {
+			loggers.LoggerK8sClient.Infof("Updated Secret CR: %s", resource.Name)
+		}
+	}
+}
+
 // UndeployAPICRs removes the API Custom Resources from the Kubernetes cluster based on API ID label.
 func UndeployAPICRs(apiID string, k8sClient client.Client) {
 	conf, errReadConfig := config.ReadConfigs()
@@ -162,6 +204,7 @@ func UndeployAPPCRs(appID string, k8sClient client.Client) {
 	}
 	undeployKongConsumers(appID, k8sClient, conf)
 	undeployKongPlugins(k8sClient, conf, labels.SelectorFromSet(map[string]string{"applicationUUID": appID}))
+	unDeploySecret(appID, k8sClient, conf)
 }
 
 // undeployHTTPRoutes removes the HTTPRoute Resources from the Kubernetes cluster based on API ID label.
@@ -235,6 +278,25 @@ func undeployKongConsumers(appID string, k8sClient client.Client, conf *config.C
 				loggers.LoggerK8sClient.Errorf("Unable to delete KongConsumer CR: %v", err)
 			} else {
 				loggers.LoggerK8sClient.Infof("Deleted KongConsumer CR: %s", resource.Name)
+			}
+		}
+	}
+}
+
+// unDeploySecret removes the Secret Resources from the Kubernetes cluster based on application ID label.
+func unDeploySecret(appID string, k8sClient client.Client, conf *config.Config) {
+	resourceList := &corev1.SecretList{}
+	err := k8sClient.List(context.Background(), resourceList, &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{"applicationUUID": appID})})
+	// Retrieve all CRs from the Kubernetes cluster
+	if err != nil {
+		loggers.LoggerK8sClient.Errorf("Unable to list Secret CRs: %v", err)
+	} else {
+		for _, resource := range resourceList.Items {
+			err := k8sClient.Delete(context.Background(), &resource, &client.DeleteOptions{})
+			if err != nil {
+				loggers.LoggerK8sClient.Errorf("Unable to delete Secret CR: %v", err)
+			} else {
+				loggers.LoggerK8sClient.Infof("Updated Secret CR: %s", resource.Name)
 			}
 		}
 	}

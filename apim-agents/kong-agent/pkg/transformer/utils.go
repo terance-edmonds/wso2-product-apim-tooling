@@ -57,17 +57,22 @@ func GeneratePluginRefName(operation *types.Operation, targetRef string, pluginN
 	if operation != nil {
 		operationTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(operation.Target+operation.Verb)))
 		concatenatedString = concatenatedString + "-" + operationTargetHash
-		return "route-" + concatenatedString + "-" + targetRef
+		return "resource-" + concatenatedString + "-" + targetRef
 	}
 	serviceTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(pluginName+targetRef)))
 	concatenatedString = concatenatedString + "-" + serviceTargetHash
-	return "service-" + concatenatedString + "-" + targetRef
+	return "api-" + concatenatedString + "-" + targetRef
 }
 
 // GenerateConsumerName generates a reference name for a consumer
 func GenerateConsumerName(applicationUUID string, consumerName string) string {
 	consumerHash := fmt.Sprintf("%x", sha1.Sum([]byte(applicationUUID+consumerName)))
 	return "consumer-" + consumerHash
+}
+
+// GenerateSecretName generates a reference name for a k8s secret
+func GenerateSecretName(applicationUUID string, environment string, secretType string) string {
+	return "secret-" + applicationUUID + "-" + strings.ToLower(environment) + "-" + secretType
 }
 
 // GenerateJSON converts go struct to json
