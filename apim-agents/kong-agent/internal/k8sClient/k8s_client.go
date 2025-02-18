@@ -184,6 +184,21 @@ func UnDeploySecretCR(name string, k8sClient client.Client, conf *config.Config)
 	}
 }
 
+// UnDeployKongPluginCR removes the Kong plugin CR Resources from the Kubernetes cluster based on name.
+func UnDeployKongPluginCR(name string, k8sClient client.Client, conf *config.Config) {
+	resource := &v1.KongPlugin{}
+	if err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: conf.DataPlane.Namespace, Name: name}, resource); err != nil {
+		if !k8error.IsNotFound(err) {
+			loggers.LoggerK8sClient.Error("Unable to get Kong Plugin CR: " + err.Error())
+		}
+		if err := k8sClient.Delete(context.Background(), resource, &client.DeleteOptions{}); err != nil {
+			loggers.LoggerK8sClient.Errorf("Unable to delete Kong Plugin CR: %v", err)
+		} else {
+			loggers.LoggerK8sClient.Infof("Updated Kong Plugin CR: %s", resource.Name)
+		}
+	}
+}
+
 // UndeployAPICRs removes the API Custom Resources from the Kubernetes cluster based on API ID label.
 func UndeployAPICRs(apiID string, k8sClient client.Client) {
 	conf, errReadConfig := config.ReadConfigs()
@@ -336,9 +351,51 @@ func RemoveKongConsumerCredential(appID string, k8sClient client.Client, conf *c
 			resource.Credentials = utils.FilterItems(resource.Credentials, credentials)
 			err := k8sClient.Update(context.Background(), &resource, &client.UpdateOptions{})
 			if err != nil {
-				loggers.LoggerK8sClient.Errorf("Unable to delete KongConsumer CR: %v", err)
+				loggers.LoggerK8sClient.Errorf("Unable to remove KongConsumer CR credential: %v", err)
 			} else {
-				loggers.LoggerK8sClient.Infof("Updated KongConsumer CR: %s", resource.Name)
+				loggers.LoggerK8sClient.Infof("Updated KongConsumer CR credential: %s", resource.Name)
+			}
+		}
+	}
+}
+
+// AddKongConsumerPluginAnnotation adds plugin annotation to Kong Consumer based on application ID label.
+func AddKongConsumerPluginAnnotation(appID string, k8sClient client.Client, conf *config.Config, annotations []string) {
+	resourceList := &v1.KongConsumerList{}
+	err := k8sClient.List(context.Background(), resourceList, &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{"applicationUUID": appID})})
+	// Retrieve all CRs from the Kubernetes cluster
+	if err != nil {
+		loggers.LoggerK8sClient.Errorf("Unable to list KongConsumer CRs: %v", err)
+	} else {
+		for _, resource := range resourceList.Items {
+			// update plugin annotations
+			resource.Annotations["konghq.com/plugins"] = utils.PrepareAnnotations(resource.Annotations["konghq.com/plugins"], annotations, false)
+			err := k8sClient.Update(context.Background(), &resource, &client.UpdateOptions{})
+			if err != nil {
+				loggers.LoggerK8sClient.Errorf("Unable to add KongConsumer CR annotations: %v", err)
+			} else {
+				loggers.LoggerK8sClient.Infof("Updated KongConsumer CR annotations: %s", resource.Name)
+			}
+		}
+	}
+}
+
+// RemoveKongConsumerPluginAnnotation removed plugin annotation to Kong Consumer based on application ID label.
+func RemoveKongConsumerPluginAnnotation(appID string, k8sClient client.Client, conf *config.Config, annotations []string) {
+	resourceList := &v1.KongConsumerList{}
+	err := k8sClient.List(context.Background(), resourceList, &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{"applicationUUID": appID})})
+	// Retrieve all CRs from the Kubernetes cluster
+	if err != nil {
+		loggers.LoggerK8sClient.Errorf("Unable to list KongConsumer CRs: %v", err)
+	} else {
+		for _, resource := range resourceList.Items {
+			// update plugin annotations
+			resource.Annotations["konghq.com/plugins"] = utils.PrepareAnnotations(resource.Annotations["konghq.com/plugins"], annotations, true)
+			err := k8sClient.Update(context.Background(), &resource, &client.UpdateOptions{})
+			if err != nil {
+				loggers.LoggerK8sClient.Errorf("Unable to remove KongConsumer CR annotations: %v", err)
+			} else {
+				loggers.LoggerK8sClient.Infof("Updated KongConsumer CR annotations: %s", resource.Name)
 			}
 		}
 	}

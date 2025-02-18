@@ -9,11 +9,13 @@ import (
 	eventConstants "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/constants"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
 	internalutils "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/utils"
 	pkgConstants "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/constants"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/synchronizer"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -231,28 +233,99 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 		aclCredentialSecretConfig := map[string]string{
 			"group": subscriptionEvent.APIUUID,
 		}
-		aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, "", "acl", aclCredentialSecretConfig)
+		aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, "api", "acl", aclCredentialSecretConfig)
 		aclCredentialSecret.Namespace = conf.DataPlane.Namespace
-		internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
-
-		// update consumer credentials
+		// add subscription limit
+		subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
+		logger.LoggerMessaging.Debugf("Subscription Policy: %v", subscriptionPolicy)
+		if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
+			rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
+			annotations := []string{rateLimitCRName}
+			internalk8sClient.AddKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, c, conf, annotations)
+		}
+		// update consumer credentials and deploy secret
 		credentials := []string{aclCredentialSecret.ObjectMeta.Name}
+		internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
 		internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, c, conf, credentials)
 	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionUpdate {
 		logger.LoggerMessaging.Info("Update Sub")
 	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionDelete {
-		credentials := []string{subscriptionEvent.APIUUID}
+		// remove subscription from consumer
+		aclCredentialSecretName := transformer.GenerateSecretName(subscriptionEvent.ApplicationUUID, "api", "acl")
+		credentials := []string{aclCredentialSecretName}
 		internalk8sClient.RemoveKongConsumerCredential(subscriptionEvent.ApplicationUUID, c, conf, credentials)
+		// remove subscription limit from consumer
+		subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
+		if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
+			rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
+			annotations := []string{rateLimitCRName}
+			internalk8sClient.RemoveKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, c, conf, annotations)
+		}
 	}
 }
 
 // HandlePolicyEvents to process policy related events
-func HandlePolicyEvents(data []byte, eventType string, client client.Client) {
+func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
+	conf, _ := config.ReadConfigs()
 
+	var policyEvent msg.PolicyInfo
+	policyEventErr := json.Unmarshal([]byte(string(data)), &policyEvent)
+	if policyEventErr != nil {
+		logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Throttling Policy event data %v", policyEventErr)
+		return
+	}
+	logger.LoggerMessaging.Infof("===========policy \n%+v\n", policyEvent)
+	if strings.EqualFold(eventType, eventConstants.PolicyCreate) {
+		if strings.EqualFold(policyEvent.PolicyType, "API") {
+			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
+			synchronizer.FetchRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c)
+			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
+		} else if strings.EqualFold(policyEvent.PolicyType, "SUBSCRIPTION") {
+			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
+			synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c, false)
+			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
+		}
+	} else if strings.EqualFold(eventType, eventConstants.PolicyUpdate) {
+		if strings.EqualFold(policyEvent.PolicyType, "API") {
+			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
+			synchronizer.FetchRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c)
+			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
+		} else if strings.EqualFold(policyEvent.PolicyType, "SUBSCRIPTION") {
+			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
+			synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c, false)
+			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
+		}
+	} else if strings.EqualFold(eventType, eventConstants.PolicyDelete) {
+		if strings.EqualFold(policyEvent.PolicyType, "API") {
+			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
+			managementserver.DeleteRateLimitPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
+			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
+		} else if strings.EqualFold(policyEvent.PolicyType, "SUBSCRIPTION") {
+			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
+			managementserver.DeleteSubscriptionPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
+			crName := transformer.GeneratePolicyCRName(policyEvent.PolicyName, policyEvent.TenantDomain, "rate-limiting", "subscription")
+			internalk8sClient.UnDeployKongPluginCR(crName, c, conf)
+			// TODO: undeploy AI ratelimit plugin
+			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
+		}
+	}
 }
 
 // HandleAIProviderEvents to process AI Provider related events
 func HandleAIProviderEvents(data []byte, eventType string, client client.Client) {
+	var aiProviderEvent msg.AIProviderEvent
+	aiProviderEventErr := json.Unmarshal([]byte(string(data)), &aiProviderEvent)
+	if aiProviderEventErr != nil {
+		logger.LoggerMessaging.Errorf("Error occurred while unmarshalling AI Provider event data %v", aiProviderEventErr)
+		return
+	}
+	logger.LoggerMessaging.Infof("===========aiprovider \n%+v\n", aiProviderEvent)
 
 }
 

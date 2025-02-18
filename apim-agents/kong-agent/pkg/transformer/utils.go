@@ -64,6 +64,14 @@ func GeneratePluginRefName(operation *types.Operation, targetRef string, pluginN
 	return "api-" + concatenatedString + "-" + targetRef
 }
 
+// GeneratePolicyCRName generates a reference name for a policy plugin.
+func GeneratePolicyCRName(policName string, tenantDomain string, pluginName string, policyType string) string {
+	concatenatedString := pluginName
+	serviceTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(policName+tenantDomain+pluginName)))
+	concatenatedString = concatenatedString + "-" + serviceTargetHash
+	return policyType + "-" + concatenatedString + "-" + pluginName
+}
+
 // GenerateConsumerName generates a reference name for a consumer
 func GenerateConsumerName(applicationUUID string, consumerName string) string {
 	consumerHash := fmt.Sprintf("%x", sha1.Sum([]byte(applicationUUID+consumerName)))

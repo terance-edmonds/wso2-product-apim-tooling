@@ -24,9 +24,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// GenerateACLPlugin handles the Kong ACL credential plugin generation
+// GenerateACLPlugin handles the Kong ACL plugin generation
 func GenerateACLPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
-	aclPlugin := v1.KongPlugin{
+	return &v1.KongPlugin{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KongPlugin",
 			APIVersion: "configuration.konghq.com/v1",
@@ -39,12 +39,11 @@ func GenerateACLPlugin(operation *types.Operation, targetRef string, config Kong
 			Raw: GenerateJSON(config),
 		},
 	}
-	return &aclPlugin
 }
 
-// GenerateJWTPlugin handles the Kong JWT credential plugin generation
+// GenerateJWTPlugin handles the Kong JWT plugin generation
 func GenerateJWTPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
-	jwtPlugin := v1.KongPlugin{
+	return &v1.KongPlugin{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KongPlugin",
 			APIVersion: "configuration.konghq.com/v1",
@@ -57,5 +56,21 @@ func GenerateJWTPlugin(operation *types.Operation, targetRef string, config Kong
 			Raw: GenerateJSON(config),
 		},
 	}
-	return &jwtPlugin
+}
+
+// GenerateRateLimitPlugin handles the Kong RateLimit plugin generation
+func GenerateRateLimitPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
+	return &v1.KongPlugin{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "KongPlugin",
+			APIVersion: "configuration.konghq.com/v1",
+		},
+		PluginName: "rate-limiting",
+		ObjectMeta: metav1.ObjectMeta{
+			Name: GeneratePluginRefName(operation, targetRef, "rate-limiting"),
+		},
+		Config: apiextensionsv1.JSON{
+			Raw: GenerateJSON(config),
+		},
+	}
 }

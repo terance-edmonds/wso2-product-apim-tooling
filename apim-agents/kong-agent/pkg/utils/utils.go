@@ -17,7 +17,10 @@
 
 package utils
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // FilterItems filter items
 func FilterItems(items []string, filterItems []string) []string {
@@ -28,4 +31,25 @@ func FilterItems(items []string, filterItems []string) []string {
 		}
 	}
 	return result
+}
+
+// AddItems adds items to given string separated ","
+func AddItems(items []string, addItems []string) []string {
+	for _, item := range items {
+		if !slices.Contains(addItems, item) {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+// PrepareAnnotations adds/removes listed annotations from given list of annotations
+func PrepareAnnotations(annotations string, items []string, remove bool) string {
+	result := strings.Split(annotations, ",")
+	if remove {
+		result = FilterItems(result, items)
+	} else {
+		result = AddItems(result, items)
+	}
+	return strings.Join(result, ",")
 }

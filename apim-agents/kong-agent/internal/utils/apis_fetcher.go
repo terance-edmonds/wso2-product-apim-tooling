@@ -27,7 +27,6 @@ import (
 	"fmt"
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	api "github.com/wso2/product-apim-tooling/apim-agent/pkg/api"
 	sync "github.com/wso2/product-apim-tooling/apim-agent/pkg/synchronizer"
 	transformer "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
@@ -48,7 +47,7 @@ func init() {
 func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Client) (*[]string, error) {
 	// Populate data from config.
 	apis := make([]string, 0)
-	apiResult, err := api.FetchAPIsOnEvent(conf, apiUUID, k8sClient)
+	apiResult, err := sync.FetchAPIsOnEvent(conf, apiUUID, k8sClient)
 	if err != nil {
 		return nil, err
 	}

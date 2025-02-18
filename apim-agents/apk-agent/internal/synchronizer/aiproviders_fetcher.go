@@ -120,7 +120,7 @@ func FetchAIProvidersOnEvent(aiProviderName string, aiProviderVersion string, or
 	var errorMsg string
 	if err != nil {
 		errorMsg = "Error occurred while calling the REST API: " + aiProviderEndpoint
-		go retryRLPFetchData(conf, errorMsg, err, c)
+		go retryRLPFetchData(conf, errorMsg, c)
 		return
 	}
 	responseBytes, err := io.ReadAll(resp.Body)
@@ -128,7 +128,7 @@ func FetchAIProvidersOnEvent(aiProviderName string, aiProviderVersion string, or
 
 	if err != nil {
 		errorMsg = "Error occurred while reading the response received for: " + aiProviderEndpoint
-		go retryRLPFetchData(conf, errorMsg, err, c)
+		go retryRLPFetchData(conf, errorMsg, c)
 		return
 	}
 
@@ -176,9 +176,8 @@ func FetchAIProvidersOnEvent(aiProviderName string, aiProviderVersion string, or
 	} else {
 		errorMsg = "Failed to fetch data! " + aiProviderEndpoint + " responded with " +
 			strconv.Itoa(resp.StatusCode)
-		go retryRLPFetchData(conf, errorMsg, err, c)
+		go retryRLPFetchData(conf, errorMsg, c)
 	}
-
 }
 
 // createAIProvider creates the AI provider CR

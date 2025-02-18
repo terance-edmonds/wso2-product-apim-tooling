@@ -23,6 +23,12 @@
 
 package synchronizer
 
+import (
+	"archive/zip"
+
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
+)
+
 // SyncAPIResponse struct contains information related to
 // response of the API pulling/fetching from control plane
 // along with the apiId and the gateway label that the call
@@ -83,4 +89,11 @@ type APIConfigs struct {
 type APIEnvProps struct {
 	EnvID      string     `mapstructure:"envId,omitempty"`
 	APIConfigs APIConfigs `mapstructure:"configs,omitempty"`
+}
+
+// FetchAPIsConf defines the return type of FetchAPIsonEvent
+type FetchAPIsConf struct {
+	APIs           *[]string
+	APIDeployments *[]transformer.Deployment
+	APIFiles       map[string]*zip.File
 }

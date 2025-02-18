@@ -53,6 +53,12 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 	// create and add route restriction with Kong ACL plugin into k8s artifacts
 	if apkConf.SubscriptionValidation {
 		kongACLPlugin := createAndAddACLPlugin(&k8sArtifact, nil, "api")
+		// Only in Kong Enterprise
+		// kongACLPlugin.Ordering = &kong.PluginOrdering{
+		// 	Before: map[string][]string{
+		// 		"access": {"jwt"},
+		// 	},
+		// }
 		kongPlugins = append(kongPlugins, kongACLPlugin.ObjectMeta.Name)
 	}
 
@@ -66,6 +72,12 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 		// OAuth2 JWT Plugin (for OAuth2 jwt authentication)
 		if authentication.AuthType == pkgConstants.OAuth2 {
 			kongJwtPlugin := createAndAddJWTPlugin(&k8sArtifact, nil, "api")
+			// Only in Kong Enterprise
+			// kongJwtPlugin.Ordering = &kong.PluginOrdering{
+			// 	After: map[string][]string{
+			// 		"access": {"acl"},
+			// 	},
+			// }
 			kongPlugins = append(kongPlugins, kongJwtPlugin.ObjectMeta.Name)
 		}
 	}

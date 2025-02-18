@@ -25,17 +25,23 @@ package synchronizer
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
 
 	parser "github.com/mitchellh/mapstructure"
+	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/auth"
 	logger "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -53,6 +59,109 @@ const (
 	APIArtifactEndpoint string = "internal/data/v1/retrieve-api-artifacts"
 	// httpTimeout is for connection timeout of httpClient in seconds
 )
+
+func init() {
+	conf, _ := config.ReadConfigs()
+	InitializeWorkerPool(conf.ControlPlane.RequestWorkerPool.PoolSize, conf.ControlPlane.RequestWorkerPool.QueueSizePerPool,
+		conf.ControlPlane.RequestWorkerPool.PauseTimeAfterFailure, conf.Agent.TrustStore.Location,
+		conf.ControlPlane.SkipSSLVerification, conf.ControlPlane.HTTPClient.RequestTimeOut, conf.ControlPlane.RetryInterval,
+		conf.ControlPlane.ServiceURL, conf.ControlPlane.Username, conf.ControlPlane.Password)
+}
+
+// FetchAPIsOnEvent  will fetch API from control plane during the API Notification Event
+func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Client) (*FetchAPIsConf, error) {
+	// Populate data from config.
+	fetchAPIsConf := FetchAPIsConf{}
+	apis := make([]string, 0)
+	envs := conf.ControlPlane.EnvironmentLabels
+
+	// Add apis to return result
+	fetchAPIsConf.APIs = &apis
+
+	// Create a channel for the byte slice (response from the APIs from control plane)
+	c := make(chan SyncAPIResponse)
+
+	//Get API details.
+	if apiUUID != nil {
+		GetAPI(c, apiUUID, envs, RuntimeArtifactEndpoint, true)
+	} else {
+		GetAPI(c, nil, envs, RuntimeArtifactEndpoint, true)
+	}
+	data := <-c
+	logger.LoggerUtils.Debugf("Receiving data for an API: %v", apiUUID)
+	if data.Resp != nil {
+		if data.Found {
+			// Reading the root zip
+			zipReader, err := zip.NewReader(bytes.NewReader(data.Resp), int64(len(data.Resp)))
+
+			// apiFiles represents zipped API files fetched from API Manager
+			apiFiles := make(map[string]*zip.File)
+			// Read the .zip files within the root apis.zip and add apis to apiFiles array.
+			for _, file := range zipReader.File {
+				apiFiles[file.Name] = file
+				logger.LoggerUtils.Debugf("API file found: " + file.Name)
+				// Todo: Read the apis.zip and extract the api.zip,deployments.json
+			}
+			if err != nil {
+				logger.LoggerUtils.Errorf("Error while reading zip: %v", err)
+				return nil, err
+			}
+			deploymentJSON, exists := apiFiles["deployments.json"]
+			if !exists {
+				logger.LoggerUtils.Errorf("deployments.json not found")
+				return nil, err
+			}
+			deploymentJSONBytes, err := transformer.ReadContent(deploymentJSON)
+			if err != nil {
+				logger.LoggerUtils.Errorf("Error while decoding the API Project Artifact: %v", err)
+				return nil, err
+			}
+			deploymentDescriptor, err := transformer.ProcessDeploymentDescriptor(deploymentJSONBytes)
+			if err != nil {
+				logger.LoggerUtils.Errorf("Error while decoding the API Project Artifact: %v", err)
+				return nil, err
+			}
+			apiDeployments := deploymentDescriptor.Data.Deployments
+			fetchAPIsConf.APIDeployments = apiDeployments
+			fetchAPIsConf.APIFiles = apiFiles
+			return &fetchAPIsConf, nil
+		}
+
+		logger.LoggerUtils.Info("API not found.")
+		return &fetchAPIsConf, nil
+	} else if data.ErrorCode == 204 {
+		logger.LoggerUtils.Infof("No API Artifacts are available in the control plane for the envionments :%s",
+			strings.Join(envs, ", "))
+		return &FetchAPIsConf{}, nil
+	} else if data.ErrorCode >= 400 && data.ErrorCode < 500 {
+		logger.LoggerUtils.ErrorC(logging.ErrorDetails{
+			Message:   fmt.Sprintf("Error occurred when retrieving APIs from control plane(unrecoverable error): %v", data.Err.Error()),
+			Severity:  logging.CRITICAL,
+			ErrorCode: 1106,
+		})
+		return nil, data.Err
+	}
+
+	// Keep the iteration still until all the envrionment response properly.
+	logger.LoggerUtils.ErrorC(logging.ErrorDetails{
+		Message:   fmt.Sprintf("Error occurred while fetching data from control plane: %v ..retrying..", data.Err),
+		Severity:  logging.MINOR,
+		ErrorCode: 1107,
+	})
+	//health.SetControlPlaneRestAPIStatus(false)
+	RetryFetchingAPIs(c, data, RuntimeArtifactEndpoint, true)
+	logger.LoggerUtils.Info("Fetching API for an event is completed...")
+	return nil, nil
+}
+
+// GetAPI function calls the FetchAPIs() with relevant environment labels defined in the config.
+func GetAPI(c chan SyncAPIResponse, id *string, envs []string, endpoint string, sendType bool) {
+	if len(envs) > 0 {
+		// If the envrionment labels are present, call the controle plane with labels.
+		logger.LoggerUtils.Debugf("Environment labels present: %v", envs)
+		go FetchAPIs(id, envs, c, endpoint, sendType)
+	}
+}
 
 // FetchAPIs submits the control plane http request to the thread pool. The thread pool would process it and return
 // the http response to the channel which contains a zip file.

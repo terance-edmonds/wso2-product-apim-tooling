@@ -24,338 +24,170 @@
 package synchronizer
 
 import (
-	"encoding/json"
-	"io/ioutil"
-	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	pkgAuth "github.com/wso2/product-apim-tooling/apim-agent/pkg/auth"
-	eventhubTypes "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	sync "github.com/wso2/product-apim-tooling/apim-agent/pkg/synchronizer"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
 	k8sclient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	policiesEndpoint                    string = "internal/data/v1/api-policies"
-	policiesByNameEndpoint              string = "internal/data/v1/api-policies?policyName="
-	subscriptionsPoliciesEndpoint       string = "internal/data/v1/subscription-policies"
-	subscriptionsPoliciesByNameEndpoint string = "internal/data/v1/subscription-policies?policyName="
-)
-
 // FetchRateLimitPoliciesOnEvent fetches the policies from the control plane on the start up and notification event updates
 func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c client.Client) {
-	logger.LoggerSynchronizer.Info("Fetching RateLimit Policies from Control Plane.")
-
 	// Read configurations and derive the eventHub details
 	conf, errReadConfig := config.ReadConfigs()
 	if errReadConfig != nil {
 		// This has to be error. For debugging purpose info
 		logger.LoggerSynchronizer.Errorf("Error reading configs: %v", errReadConfig)
 	}
-	// Populate data from the config
-	ehConfigs := conf.ControlPlane
-	ehURL := ehConfigs.ServiceURL
-	// If the eventHub URL is configured with trailing slash
-	if strings.HasSuffix(ehURL, "/") {
-		if ratelimitName != "" {
-			ehURL += policiesByNameEndpoint + ratelimitName
+
+	rateLimitPolicies, errorMsg := sync.FetchRateLimitPoliciesOnEvent(ratelimitName, organization)
+	if rateLimitPolicies != nil {
+		if len(rateLimitPolicies) == 0 && errorMsg != "" {
+			go retryRLPFetchData(conf, errorMsg, c)
 		} else {
-			ehURL += policiesEndpoint
-		}
-	} else {
-		if ratelimitName != "" {
-			ehURL += "/" + policiesByNameEndpoint + ratelimitName
-		} else {
-			ehURL += "/" + policiesEndpoint
-		}
-	}
-
-	logger.LoggerSynchronizer.Debugf("Fetching RateLimit Policies from the URL %v: ", ehURL)
-
-	ehUname := ehConfigs.Username
-	ehPass := ehConfigs.Password
-	basicAuth := "Basic " + pkgAuth.GetBasicAuth(ehUname, ehPass)
-
-	// Check if TLS is enabled
-	skipSSL := ehConfigs.SkipSSLVerification
-
-	// Create a HTTP request
-	req, err := http.NewRequest("GET", ehURL, nil)
-	if err != nil {
-		logger.LoggerSynchronizer.Errorf("Error while creating http request for RateLimit Policies Endpoint : %v", err)
-	}
-
-	var queryParamMap map[string]string
-
-	if queryParamMap != nil && len(queryParamMap) > 0 {
-		q := req.URL.Query()
-		// Making necessary query parameters for the request
-		for queryParamKey, queryParamValue := range queryParamMap {
-			q.Add(queryParamKey, queryParamValue)
-		}
-		req.URL.RawQuery = q.Encode()
-	}
-	// Setting authorization header
-	req.Header.Set(sync.Authorization, basicAuth)
-
-	if organization != "" {
-		logger.LoggerSynchronizer.Debugf("Setting the organization header for the request: %v", organization)
-		req.Header.Set("xWSO2Tenant", organization)
-	} else {
-		logger.LoggerSynchronizer.Debugf("Setting the organization header for the request: %v", "ALL")
-		req.Header.Set("xWSO2Tenant", "ALL")
-	}
-
-	// Make the request
-	logger.LoggerSynchronizer.Debug("Sending the control plane request")
-	resp, err := tlsutils.InvokeControlPlane(req, skipSSL)
-	var errorMsg string
-	if err != nil {
-		errorMsg = "Error occurred while calling the REST API: " + policiesEndpoint
-		go retryRLPFetchData(conf, errorMsg, err, c)
-		return
-	}
-	responseBytes, err := ioutil.ReadAll(resp.Body)
-	logger.LoggerSynchronizer.Debugf("Response String received for Policies: %v", string(responseBytes))
-
-	if err != nil {
-		errorMsg = "Error occurred while reading the response received for: " + policiesEndpoint
-		go retryRLPFetchData(conf, errorMsg, err, c)
-		return
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var rateLimitPolicyList eventhubTypes.RateLimitPolicyList
-		err := json.Unmarshal(responseBytes, &rateLimitPolicyList)
-		if err != nil {
-			logger.LoggerSynchronizer.Errorf("Error occurred while unmarshelling RateLimit Policies event data %v", err)
-			return
-		}
-		logger.LoggerSynchronizer.Debugf("Policies received: %v", rateLimitPolicyList.List)
-		var rateLimitPolicies []eventhubTypes.RateLimitPolicy = rateLimitPolicyList.List
-		for _, policy := range rateLimitPolicies {
-			if policy.DefaultLimit.RequestCount.TimeUnit == "min" {
-				policy.DefaultLimit.RequestCount.TimeUnit = "Minute"
-			} else if policy.DefaultLimit.RequestCount.TimeUnit == "hour" {
-				policy.DefaultLimit.RequestCount.TimeUnit = "Hour"
-			} else if policy.DefaultLimit.RequestCount.TimeUnit == "day" {
-				policy.DefaultLimit.RequestCount.TimeUnit = "Day"
+			for _, policy := range rateLimitPolicies {
+				if policy.DefaultLimit.RequestCount.TimeUnit == "min" {
+					policy.DefaultLimit.RequestCount.TimeUnit = "Minute"
+				} else if policy.DefaultLimit.RequestCount.TimeUnit == "hour" {
+					policy.DefaultLimit.RequestCount.TimeUnit = "Hour"
+				} else if policy.DefaultLimit.RequestCount.TimeUnit == "day" {
+					policy.DefaultLimit.RequestCount.TimeUnit = "Day"
+				}
+				// Update the exisitng rate limit policies with current policy
+				k8sclient.UpdateRateLimitPolicyCR(policy, c)
 			}
-			// managementserver.AddRateLimitPolicy(policy)
-			logger.LoggerSynchronizer.Infof("RateLimit Policy added to internal map: %v", policy)
-			// Update the exisitng rate limit policies with current policy
-			k8sclient.UpdateRateLimitPolicyCR(policy, c)
-
 		}
-	} else {
-		errorMsg = "Failed to fetch data! " + policiesEndpoint + " responded with " +
-			strconv.Itoa(resp.StatusCode)
-		go retryRLPFetchData(conf, errorMsg, err, c)
 	}
 }
 
 // FetchSubscriptionRateLimitPoliciesOnEvent fetches the policies from the control plane on the start up and notification event updates
 func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organization string, c client.Client, cleanupDeletedPolicies bool) {
-	logger.LoggerSynchronizer.Info("Fetching Subscription RateLimit Policies from Control Plane.")
-
 	// Read configurations and derive the eventHub details
 	conf, errReadConfig := config.ReadConfigs()
 	if errReadConfig != nil {
 		// This has to be error. For debugging purpose info
 		logger.LoggerSynchronizer.Errorf("Error reading configs: %v", errReadConfig)
 	}
-	// Populate data from the config
-	ehConfigs := conf.ControlPlane
-	ehURL := ehConfigs.ServiceURL
-	// If the eventHub URL is configured with trailing slash
-	if strings.HasSuffix(ehURL, "/") {
-		if ratelimitName != "" {
-			ehURL += subscriptionsPoliciesByNameEndpoint + ratelimitName
+
+	rateLimitPolicies, errorMsg := sync.FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName, organization)
+	if rateLimitPolicies != nil {
+		if len(rateLimitPolicies) == 0 && errorMsg != "" {
+			go retrySubscriptionRLPFetchData(conf, errorMsg, c)
 		} else {
-			ehURL += subscriptionsPoliciesEndpoint
-		}
-	} else {
-		if ratelimitName != "" {
-			ehURL += "/" + subscriptionsPoliciesByNameEndpoint + ratelimitName
-		} else {
-			ehURL += "/" + subscriptionsPoliciesEndpoint
-		}
-	}
-
-	logger.LoggerSynchronizer.Infof("Fetching Subscription RateLimit Policies from the URL %v: ", ehURL)
-
-	ehUname := ehConfigs.Username
-	ehPass := ehConfigs.Password
-	basicAuth := "Basic " + pkgAuth.GetBasicAuth(ehUname, ehPass)
-
-	// Check if TLS is enabled
-	skipSSL := ehConfigs.SkipSSLVerification
-
-	// Create a HTTP request
-	req, err := http.NewRequest("GET", ehURL, nil)
-	if err != nil {
-		logger.LoggerSynchronizer.Errorf("Error while creating http request for Subscription RateLimit Policies Endpoint : %v", err)
-	}
-
-	// Setting authorization header
-	req.Header.Set(sync.Authorization, basicAuth)
-
-	if organization != "" {
-		logger.LoggerSynchronizer.Debugf("Setting the organization header for the request: %v", organization)
-		req.Header.Set("xWSO2Tenant", organization)
-	} else {
-		logger.LoggerSynchronizer.Debugf("Setting the organization header for the request: %v", "ALL")
-		req.Header.Set("xWSO2Tenant", "ALL")
-	}
-
-	// Make the request
-	logger.LoggerSynchronizer.Debug("Sending the control plane request")
-	resp, err := tlsutils.InvokeControlPlane(req, skipSSL)
-	var errorMsg string
-	if err != nil {
-		errorMsg = "Error occurred while calling the REST API: " + policiesEndpoint
-		go retrySubscriptionRLPFetchData(conf, errorMsg, err, c)
-		return
-	}
-	responseBytes, err := ioutil.ReadAll(resp.Body)
-	logger.LoggerSynchronizer.Debugf("Response String received for Policies: %v", string(responseBytes))
-
-	if err != nil {
-		errorMsg = "Error occurred while reading the response received for: " + policiesEndpoint
-		go retrySubscriptionRLPFetchData(conf, errorMsg, err, c)
-		return
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var rateLimitPolicyList eventhubTypes.SubscriptionPolicyList
-		err := json.Unmarshal(responseBytes, &rateLimitPolicyList)
-		if err != nil {
-			logger.LoggerSynchronizer.Errorf("Error occurred while unmarshelling Subscription RateLimit Policies event data %v", err)
-			return
-		}
-		logger.LoggerSynchronizer.Debugf("Policies received: %v", rateLimitPolicyList.List)
-		var rateLimitPolicies []eventhubTypes.SubscriptionPolicy = rateLimitPolicyList.List
-		if cleanupDeletedPolicies {
-			// This logic is executed once at the startup time so no need to worry about the nested for loops for performance.
-			// Fetch all AiRatelimitPolicies
-			airls, _, retrieveAllAIRLErr := k8sclient.RetrieveAllAIRatelimitPoliciesSFromK8s(c, "")
-			rls, _, retrieveAllRLErr := k8sclient.RetrieveAllRatelimitPoliciesSFromK8s(c, "")
-			if retrieveAllAIRLErr == nil {
-				for _, airl := range airls {
-					if cpName, exists := airl.ObjectMeta.Labels["CPName"]; exists {
-						found := false
-						for _, policy := range rateLimitPolicies {
-							if policy.Name == cpName {
-								found = true
-								break
+			if cleanupDeletedPolicies {
+				// This logic is executed once at the startup time so no need to worry about the nested for loops for performance.
+				// Fetch all AiRatelimitPolicies
+				airls, _, retrieveAllAIRLErr := k8sclient.RetrieveAllAIRatelimitPoliciesSFromK8s(c, "")
+				rls, _, retrieveAllRLErr := k8sclient.RetrieveAllRatelimitPoliciesSFromK8s(c, "")
+				if retrieveAllAIRLErr == nil {
+					for _, airl := range airls {
+						if cpName, exists := airl.ObjectMeta.Labels["CPName"]; exists {
+							found := false
+							for _, policy := range rateLimitPolicies {
+								if policy.Name == cpName {
+									found = true
+									break
+								}
+							}
+							if !found {
+								// Delete the airatelimitpolicy
+								k8sclient.UndeploySubscriptionAIRateLimitPolicyCR(airl.Name, c)
 							}
 						}
-						if !found {
-							// Delete the airatelimitpolicy
-							k8sclient.UndeploySubscriptionAIRateLimitPolicyCR(airl.Name, c)
-						}
 					}
+				} else {
+					logger.LoggerSynchronizer.Errorf("Error while fetching airatelimitpolicies for cleaning up outdataed crs. Error: %+v", retrieveAllAIRLErr)
 				}
-			} else {
-				logger.LoggerSynchronizer.Errorf("Error while fetching airatelimitpolicies for cleaning up outdataed crs. Error: %+v", retrieveAllAIRLErr)
-			}
-			if retrieveAllRLErr == nil {
-				for _, rl := range rls {
-					if cpName, exists := rl.ObjectMeta.Labels["CPName"]; exists {
-						found := false
-						for _, policy := range rateLimitPolicies {
-							if policy.Name == cpName {
-								found = true
-								break
+				if retrieveAllRLErr == nil {
+					for _, rl := range rls {
+						if cpName, exists := rl.ObjectMeta.Labels["CPName"]; exists {
+							found := false
+							for _, policy := range rateLimitPolicies {
+								if policy.Name == cpName {
+									found = true
+									break
+								}
+							}
+							if !found {
+								// Delete the airatelimitpolicy
+								k8sclient.UnDeploySubscriptionRateLimitPolicyCR(rl.Name, c)
 							}
 						}
-						if !found {
-							// Delete the airatelimitpolicy
-							k8sclient.UnDeploySubscriptionRateLimitPolicyCR(rl.Name, c)
-						}
 					}
+				} else {
+					logger.LoggerSynchronizer.Errorf("Error while fetching ratelimitpolicies for cleaning up outdataed crs. Error: %+v", retrieveAllRLErr)
 				}
-			} else {
-				logger.LoggerSynchronizer.Errorf("Error while fetching ratelimitpolicies for cleaning up outdataed crs. Error: %+v", retrieveAllRLErr)
 			}
-		}
 
-		for _, policy := range rateLimitPolicies {
-			if policy.QuotaType == "aiApiQuota" {
-				if policy.DefaultLimit.AiAPIQuota != nil {
-					switch policy.DefaultLimit.AiAPIQuota.TimeUnit {
-					case "min":
-						policy.DefaultLimit.AiAPIQuota.TimeUnit = "Minute"
-					case "hours":
-						policy.DefaultLimit.AiAPIQuota.TimeUnit = "Hour"
-					case "days":
-						policy.DefaultLimit.AiAPIQuota.TimeUnit = "Day"
-					default:
-						logger.LoggerSynchronizer.Errorf("Unsupported timeunit %s", policy.DefaultLimit.AiAPIQuota.TimeUnit)
-						continue
+			for _, policy := range rateLimitPolicies {
+				if policy.QuotaType == "aiApiQuota" {
+					if policy.DefaultLimit.AiAPIQuota != nil {
+						switch policy.DefaultLimit.AiAPIQuota.TimeUnit {
+						case "min":
+							policy.DefaultLimit.AiAPIQuota.TimeUnit = "Minute"
+						case "hours":
+							policy.DefaultLimit.AiAPIQuota.TimeUnit = "Hour"
+						case "days":
+							policy.DefaultLimit.AiAPIQuota.TimeUnit = "Day"
+						default:
+							logger.LoggerSynchronizer.Errorf("Unsupported timeunit %s", policy.DefaultLimit.AiAPIQuota.TimeUnit)
+							continue
+						}
+						if policy.DefaultLimit.AiAPIQuota.PromptTokenCount == nil && policy.DefaultLimit.AiAPIQuota.TotalTokenCount != nil {
+							policy.DefaultLimit.AiAPIQuota.PromptTokenCount = policy.DefaultLimit.AiAPIQuota.TotalTokenCount
+						}
+						if policy.DefaultLimit.AiAPIQuota.CompletionTokenCount == nil && policy.DefaultLimit.AiAPIQuota.TotalTokenCount != nil {
+							policy.DefaultLimit.AiAPIQuota.CompletionTokenCount = policy.DefaultLimit.AiAPIQuota.TotalTokenCount
+						}
+						if policy.DefaultLimit.AiAPIQuota.TotalTokenCount == nil && policy.DefaultLimit.AiAPIQuota.PromptTokenCount != nil && policy.DefaultLimit.AiAPIQuota.CompletionTokenCount != nil {
+							total := *policy.DefaultLimit.AiAPIQuota.PromptTokenCount + *policy.DefaultLimit.AiAPIQuota.CompletionTokenCount
+							policy.DefaultLimit.AiAPIQuota.TotalTokenCount = &total
+						}
+						// managementserver.AddSubscriptionPolicy(policy)
+						k8sclient.DeployAIRateLimitPolicyFromCPPolicy(policy, c)
+					} else {
+						logger.LoggerSynchronizer.Errorf("AIQuota type response recieved but no data found. %+v", policy.DefaultLimit)
 					}
-					if policy.DefaultLimit.AiAPIQuota.PromptTokenCount == nil && policy.DefaultLimit.AiAPIQuota.TotalTokenCount != nil {
-						policy.DefaultLimit.AiAPIQuota.PromptTokenCount = policy.DefaultLimit.AiAPIQuota.TotalTokenCount
-					}
-					if policy.DefaultLimit.AiAPIQuota.CompletionTokenCount == nil && policy.DefaultLimit.AiAPIQuota.TotalTokenCount != nil {
-						policy.DefaultLimit.AiAPIQuota.CompletionTokenCount = policy.DefaultLimit.AiAPIQuota.TotalTokenCount
-					}
-					if policy.DefaultLimit.AiAPIQuota.TotalTokenCount == nil && policy.DefaultLimit.AiAPIQuota.PromptTokenCount != nil && policy.DefaultLimit.AiAPIQuota.CompletionTokenCount != nil {
-						total := *policy.DefaultLimit.AiAPIQuota.PromptTokenCount + *policy.DefaultLimit.AiAPIQuota.CompletionTokenCount
-						policy.DefaultLimit.AiAPIQuota.TotalTokenCount = &total
+				} else {
+					if policy.DefaultLimit.RequestCount.TimeUnit == "min" {
+						policy.DefaultLimit.RequestCount.TimeUnit = "Minute"
+					} else if policy.DefaultLimit.RequestCount.TimeUnit == "hours" {
+						policy.DefaultLimit.RequestCount.TimeUnit = "Hour"
+					} else if policy.DefaultLimit.RequestCount.TimeUnit == "days" {
+						policy.DefaultLimit.RequestCount.TimeUnit = "Day"
 					}
 					// managementserver.AddSubscriptionPolicy(policy)
-					k8sclient.DeployAIRateLimitPolicyFromCPPolicy(policy, c)
-				} else {
-					logger.LoggerSynchronizer.Errorf("AIQuota type response recieved but no data found. %+v", policy.DefaultLimit)
+					logger.LoggerSynchronizer.Infof("RateLimit Policy added to internal map: %v", policy)
+					// Update the exisitng rate limit policies with current policy
+					k8sclient.DeploySubscriptionRateLimitPolicyCR(policy, c)
 				}
-			} else {
-				if policy.DefaultLimit.RequestCount.TimeUnit == "min" {
-					policy.DefaultLimit.RequestCount.TimeUnit = "Minute"
-				} else if policy.DefaultLimit.RequestCount.TimeUnit == "hours" {
-					policy.DefaultLimit.RequestCount.TimeUnit = "Hour"
-				} else if policy.DefaultLimit.RequestCount.TimeUnit == "days" {
-					policy.DefaultLimit.RequestCount.TimeUnit = "Day"
-				}
-				// managementserver.AddSubscriptionPolicy(policy)
-				logger.LoggerSynchronizer.Infof("RateLimit Policy added to internal map: %v", policy)
-				// Update the exisitng rate limit policies with current policy
-				k8sclient.DeploySubscriptionRateLimitPolicyCR(policy, c)
 			}
 		}
-	} else {
-		errorMsg = "Failed to fetch data! " + policiesEndpoint + " responded with " +
-			strconv.Itoa(resp.StatusCode)
-		go retrySubscriptionRLPFetchData(conf, errorMsg, err, c)
 	}
 }
 
-func retryRLPFetchData(conf *config.Config, errorMessage string, err error, c client.Client) {
+func retryRLPFetchData(conf *config.Config, errorMessage string, c client.Client) {
 	logger.LoggerSynchronizer.Debugf("Time Duration for retrying: %v",
 		conf.ControlPlane.RetryInterval*time.Second)
 	time.Sleep(conf.ControlPlane.RetryInterval * time.Second)
 	FetchRateLimitPoliciesOnEvent("", "", c)
 	retryAttempt++
 	if retryAttempt >= retryCount {
-		logger.LoggerSynchronizer.Errorf(errorMessage, err)
+		logger.LoggerSynchronizer.Error(errorMessage)
 		return
 	}
 }
 
-func retrySubscriptionRLPFetchData(conf *config.Config, errorMessage string, err error, c client.Client) {
+func retrySubscriptionRLPFetchData(conf *config.Config, errorMessage string, c client.Client) {
 	logger.LoggerSynchronizer.Debugf("Time Duration for retrying: %v",
 		conf.ControlPlane.RetryInterval*time.Second)
 	time.Sleep(conf.ControlPlane.RetryInterval * time.Second)
 	FetchSubscriptionRateLimitPoliciesOnEvent("", "", c, false)
 	retryAttempt++
 	if retryAttempt >= retryCount {
-		logger.LoggerSynchronizer.Errorf(errorMessage, err)
+		logger.LoggerSynchronizer.Error(errorMessage)
 		return
 	}
 }
