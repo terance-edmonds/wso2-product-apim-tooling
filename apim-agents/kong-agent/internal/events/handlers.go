@@ -17,6 +17,7 @@ import (
 	pkgConstants "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/constants"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/synchronizer"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/transformer"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -161,7 +162,7 @@ func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
 			logger.LoggerMessaging.Info("Application registration remove")
 			jwtCredentialSecretName := transformer.GenerateSecretName(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, pkgConstants.KongJwtSecretName)
 			credentials := []string{jwtCredentialSecretName}
-			internalk8sClient.RemoveKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, c, conf, credentials)
+			internalk8sClient.RemoveKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, "", c, conf, credentials)
 			internalk8sClient.UnDeploySecretCR(jwtCredentialSecretName, c, conf)
 		}
 	} else {
@@ -186,11 +187,7 @@ func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
 
 		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationEvent)
 		if applicationEvent.Event.Type == eventConstants.ApplicationCreate {
-			// create consumer
-			consumer := transformer.CreateConsumer(applicationEvent.UUID, applicationEvent.Subscriber)
-			consumer.Namespace = conf.DataPlane.Namespace
-			// deploy consumer
-			internalk8sClient.DeployKongConsumerCR(consumer, c)
+			logger.LoggerMessaging.Info("Application create")
 		} else if applicationEvent.Event.Type == eventConstants.ApplicationUpdate {
 			logger.LoggerMessaging.Info("Application update")
 		} else if applicationEvent.Event.Type == eventConstants.ApplicationDelete {
@@ -229,38 +226,78 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 
 	logger.LoggerMessaging.Infof("===========sub \n%+v\n", subscriptionEvent)
 	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
+		// create consumer
+		consumer := transformer.CreateConsumer(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID)
+		consumer.Namespace = conf.DataPlane.Namespace
+
 		// create kong acl secret CR
 		aclCredentialSecretConfig := map[string]string{
 			"group": subscriptionEvent.APIUUID,
 		}
-		aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, "api", "acl", aclCredentialSecretConfig)
+		aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, "acl", aclCredentialSecretConfig)
 		aclCredentialSecret.Namespace = conf.DataPlane.Namespace
-		// add subscription limit
-		subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
-		logger.LoggerMessaging.Debugf("Subscription Policy: %v", subscriptionPolicy)
-		if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
-			rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
-			annotations := []string{rateLimitCRName}
-			internalk8sClient.AddKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, c, conf, annotations)
-		}
-		// update consumer credentials and deploy secret
 		credentials := []string{aclCredentialSecret.ObjectMeta.Name}
+
+		// update consumer subscription limit plugin annotation
+		subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
+		logger.LoggerMessaging.Infof("Subscription Policy: %v", subscriptionPolicy)
+		if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
+			rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
+			addAnnotations := []string{rateLimitCRName}
+			consumer.Annotations["konghq.com/plugins"] = utils.PrepareAnnotations(consumer.Annotations["konghq.com/plugins"], addAnnotations, nil)
+		}
+
+		// get available jwt credentials for the application
+		jwtSecretCredentials := internalk8sClient.GetK8sSecrets(map[string]string{
+			"applicationUUID":       subscriptionEvent.ApplicationUUID,
+			"konghq.com/credential": "jwt",
+		}, c, conf)
+		for _, jwtSecretCredential := range jwtSecretCredentials {
+			credentials = append(credentials, jwtSecretCredential.Name)
+		}
+
+		// update consumer credentials
+		consumer.Credentials = utils.AddItems(consumer.Credentials, credentials)
+		// deploy acl secret
 		internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
-		internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, c, conf, credentials)
+		// deploy consumer
+		internalk8sClient.DeployKongConsumerCR(consumer, c)
 	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionUpdate {
-		logger.LoggerMessaging.Info("Update Sub")
-	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionDelete {
-		// remove subscription from consumer
-		aclCredentialSecretName := transformer.GenerateSecretName(subscriptionEvent.ApplicationUUID, "api", "acl")
-		credentials := []string{aclCredentialSecretName}
-		internalk8sClient.RemoveKongConsumerCredential(subscriptionEvent.ApplicationUUID, c, conf, credentials)
-		// remove subscription limit from consumer
+		var removeAnnotations []string
+		var addAnnotations []string
+		// retrieving current subscription policy name
+		consumerName := transformer.GenerateConsumerName(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID)
+		consumer := internalk8sClient.GetKongConsumerCR(consumerName, c, conf)
+
+		if consumer != nil {
+			if annotations, ok := consumer.Annotations["konghq.com/plugins"]; ok {
+				annotationsArr := strings.Split(annotations, ",")
+				for _, name := range annotationsArr {
+					logger.LoggerMessaging.Infoln(name)
+					if strings.Contains(name, "subscription") && strings.Contains(name, "rate-limiting") {
+						removeAnnotations = append(removeAnnotations, name)
+						break
+					}
+				}
+			}
+		}
+
+		// updating new subscription policy name
 		subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
 		if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
 			rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
-			annotations := []string{rateLimitCRName}
-			internalk8sClient.RemoveKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, c, conf, annotations)
+			addAnnotations = append(addAnnotations, rateLimitCRName)
 		}
+
+		internalk8sClient.UpdateKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, c, conf, addAnnotations, removeAnnotations)
+	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionDelete {
+		// remove acl secret credential
+		aclSecretCredentialName := transformer.GenerateSecretName(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, "acl")
+		internalk8sClient.UnDeploySecretCR(aclSecretCredentialName, c, conf)
+
+		// remove kong consumer CR
+		consumerName := transformer.GenerateConsumerName(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID)
+		internalk8sClient.UnDeployKongConsumerCR(consumerName, c, conf)
 	}
 }
 
@@ -274,7 +311,9 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 		logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Throttling Policy event data %v", policyEventErr)
 		return
 	}
+
 	logger.LoggerMessaging.Infof("===========policy \n%+v\n", policyEvent)
+
 	if strings.EqualFold(eventType, eventConstants.PolicyCreate) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)

@@ -58,6 +58,7 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c 
 			for _, policy := range rateLimitPolicies {
 				if policy.QuotaType == "aiApiQuota" {
 					// TODO: implement ai rate limits
+					logger.LoggerSynchronizer.Printf("AI API Quota ratelimit policy %v", policy)
 				} else {
 					rateLimitConfig := transformer.KongPluginConfig{
 						"limit_by": "consumer",
@@ -96,6 +97,7 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 			for _, policy := range rateLimitPolicies {
 				if policy.QuotaType == "aiApiQuota" {
 					// TODO: implement ai rate limits
+					logger.LoggerSynchronizer.Printf("AI API Quota ratelimit policy %v", policy)
 				} else {
 					rateLimitConfig := transformer.KongPluginConfig{
 						"limit_by": "consumer",

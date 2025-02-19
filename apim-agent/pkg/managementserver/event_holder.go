@@ -76,7 +76,7 @@ func AddSubscriptionPolicy(rateLimitPolicy eventHub.SubscriptionPolicy) {
 	subscriptionPolicyMap[rateLimitPolicy.Name+rateLimitPolicy.TenantDomain] = rateLimitPolicy
 }
 
-// GetRateLimitPolicy returns a rate limit policy from the rateLimitPolicyMap
+// GetSubscriptionPolicy returns a subscription policy from the subscriptionPolicyMap
 func GetSubscriptionPolicy(name string, tenantDomain string) eventHub.SubscriptionPolicy {
 	return subscriptionPolicyMap[name+tenantDomain]
 }

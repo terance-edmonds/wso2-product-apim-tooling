@@ -23,8 +23,10 @@ import (
 	v1alpha1 "github.com/kong/kubernetes-configuration/api/configuration/v1alpha1"
 	v1beta1 "github.com/kong/kubernetes-configuration/api/configuration/v1beta1"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/synchronizer"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // PreRun prepares the agent environment and runs before Run.
@@ -32,4 +34,16 @@ func PreRun(conf *config.Config, scheme *runtime.Scheme) {
 	utilruntime.Must(v1.AddToScheme(scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 	utilruntime.Must(v1beta1.AddToScheme(scheme))
+}
+
+// Run handles any configurations that runs on agent start.
+func Run(conf *config.Config, mgr manager.Manager) {
+	AgentMode := conf.Agent.Mode
+
+	if AgentMode == "CPtoDP" {
+		// Load initial Policy data from control plane
+		synchronizer.FetchRateLimitPoliciesOnEvent("", "", mgr.GetClient())
+	}
+	// Load initial Subscription Rate Limit data from control plane
+	synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent("", "", mgr.GetClient(), true)
 }

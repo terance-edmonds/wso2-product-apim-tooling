@@ -202,35 +202,36 @@ func updateHTTPRouteAnnotations(httpRoute *gwapiv1.HTTPRoute, annotations map[st
 }
 
 // CreateConsumer handles the Kong consumer generation
-func CreateConsumer(applicationUUID string, username string) *v1.KongConsumer {
+func CreateConsumer(applicationUUID string, apiUUID string) *v1.KongConsumer {
 	consumer := v1.KongConsumer{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KongConsumer",
 			APIVersion: "configuration.konghq.com/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GenerateConsumerName(applicationUUID, username),
+			Name: GenerateConsumerName(applicationUUID, apiUUID),
 			Annotations: map[string]string{
 				"kubernetes.io/ingress.class": k8sIngressClassName,
 			},
 			Labels: make(map[string]string, 0),
 		},
-		Username: generateSHA1Hash(username + applicationUUID),
+		Username: generateSHA1Hash(apiUUID + applicationUUID),
 		CustomID: generateSHA1Hash(applicationUUID),
 	}
 	consumer.Labels[k8APPUuidField] = applicationUUID
+	consumer.Labels[k8APIUuidField] = apiUUID
 	return &consumer
 }
 
 // GenerateK8sCredentialSecret handles the k8s secret generation for kong credentials
-func GenerateK8sCredentialSecret(applicationUUID string, environment string, credentialName string, data map[string]string) *corev1.Secret {
+func GenerateK8sCredentialSecret(applicationUUID string, identifier string, credentialName string, data map[string]string) *corev1.Secret {
 	secret := corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GenerateSecretName(applicationUUID, environment, credentialName),
+			Name: GenerateSecretName(applicationUUID, identifier, credentialName),
 			Labels: map[string]string{
 				"konghq.com/credential": credentialName,
 			},

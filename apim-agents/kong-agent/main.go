@@ -21,7 +21,7 @@ func (a Agent) PreRun(conf *config.Config, scheme *runtime.Scheme) {
 
 // Run initiates the gateway specific agent
 func (a Agent) Run(conf *config.Config, mgr manager.Manager) {
-
+	agent.Run(conf, mgr)
 }
 
 // ProcessEvents handles gateway specific functions need to be triggered on event processing

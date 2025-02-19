@@ -145,9 +145,9 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string) ([
 			managementserver.AddRateLimitPolicy(policy)
 		}
 		return rateLimitPolicies, ""
-	} else {
-		errorMsg = "Failed to fetch data! " + policiesEndpoint + " responded with " + strconv.Itoa(resp.StatusCode)
 	}
+
+	errorMsg = "Failed to fetch data! " + policiesEndpoint + " responded with " + strconv.Itoa(resp.StatusCode)
 	return make([]eventhub.RateLimitPolicy, 0), errorMsg
 }
 
@@ -228,7 +228,7 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 			logger.LoggerSync.Errorf("Error occurred while unmarshelling Subscription RateLimit Policies event data %v", err)
 			return nil, ""
 		}
-		logger.LoggerSync.Debugf("Policies received: %v", rateLimitPolicyList.List)
+		logger.LoggerSync.Infof("Policies received: %v", rateLimitPolicyList.List)
 		var rateLimitPolicies []eventhub.SubscriptionPolicy = rateLimitPolicyList.List
 		for _, policy := range rateLimitPolicies {
 			if policy.QuotaType == "aiApiQuota" {
@@ -267,9 +267,9 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 			}
 		}
 		return rateLimitPolicies, ""
-	} else {
-		errorMsg = "Failed to fetch data! " + policiesEndpoint + " responded with " +
-			strconv.Itoa(resp.StatusCode)
 	}
+
+	errorMsg = "Failed to fetch data! " + policiesEndpoint + " responded with " +
+		strconv.Itoa(resp.StatusCode)
 	return make([]eventhub.SubscriptionPolicy, 0), errorMsg
 }

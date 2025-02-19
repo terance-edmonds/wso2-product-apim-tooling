@@ -33,7 +33,7 @@ func GenerateACLPlugin(operation *types.Operation, targetRef string, config Kong
 		},
 		PluginName: "acl",
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GeneratePluginRefName(operation, targetRef, "acl"),
+			Name: GeneratePluginCRName(operation, targetRef, "acl"),
 		},
 		Config: apiextensionsv1.JSON{
 			Raw: GenerateJSON(config),
@@ -50,7 +50,7 @@ func GenerateJWTPlugin(operation *types.Operation, targetRef string, config Kong
 		},
 		PluginName: "jwt",
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GeneratePluginRefName(operation, targetRef, "jwt"),
+			Name: GeneratePluginCRName(operation, targetRef, "jwt"),
 		},
 		Config: apiextensionsv1.JSON{
 			Raw: GenerateJSON(config),
@@ -67,7 +67,7 @@ func GenerateRateLimitPlugin(operation *types.Operation, targetRef string, confi
 		},
 		PluginName: "rate-limiting",
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GeneratePluginRefName(operation, targetRef, "rate-limiting"),
+			Name: GeneratePluginCRName(operation, targetRef, "rate-limiting"),
 		},
 		Config: apiextensionsv1.JSON{
 			Raw: GenerateJSON(config),

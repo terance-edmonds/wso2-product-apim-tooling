@@ -51,8 +51,8 @@ func GenerateOperationsMatrix(totalOperations int, maxColumns int) [][]types.Ope
 	return operationsArray
 }
 
-// GeneratePluginRefName generates a reference name for a plugin based on the operation, target reference, and plugin name.
-func GeneratePluginRefName(operation *types.Operation, targetRef string, pluginName string) string {
+// GeneratePluginCRName generates a reference name for a plugin based on the operation, target reference, and plugin name.
+func GeneratePluginCRName(operation *types.Operation, targetRef string, pluginName string) string {
 	concatenatedString := pluginName
 	if operation != nil {
 		operationTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(operation.Target+operation.Verb)))
@@ -66,10 +66,8 @@ func GeneratePluginRefName(operation *types.Operation, targetRef string, pluginN
 
 // GeneratePolicyCRName generates a reference name for a policy plugin.
 func GeneratePolicyCRName(policName string, tenantDomain string, pluginName string, policyType string) string {
-	concatenatedString := pluginName
 	serviceTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(policName+tenantDomain+pluginName)))
-	concatenatedString = concatenatedString + "-" + serviceTargetHash
-	return policyType + "-" + concatenatedString + "-" + pluginName
+	return policyType + "-" + serviceTargetHash + "-" + pluginName
 }
 
 // GenerateConsumerName generates a reference name for a consumer
@@ -79,8 +77,8 @@ func GenerateConsumerName(applicationUUID string, consumerName string) string {
 }
 
 // GenerateSecretName generates a reference name for a k8s secret
-func GenerateSecretName(applicationUUID string, environment string, secretType string) string {
-	return "secret-" + applicationUUID + "-" + strings.ToLower(environment) + "-" + secretType
+func GenerateSecretName(applicationUUID string, apiUUID string, secretType string) string {
+	return "secret-" + generateSHA1Hash(applicationUUID+apiUUID) + "-" + secretType
 }
 
 // GenerateJSON converts go struct to json

@@ -30,26 +30,34 @@ func FilterItems(items []string, filterItems []string) []string {
 			result = append(result, item)
 		}
 	}
-	return result
+	return TrimSpaces(result)
 }
 
 // AddItems adds items to given string separated ","
 func AddItems(items []string, addItems []string) []string {
-	for _, item := range items {
-		if !slices.Contains(addItems, item) {
+	for _, item := range addItems {
+		if !slices.Contains(items, item) {
 			items = append(items, item)
 		}
 	}
-	return items
+	return TrimSpaces(items)
+}
+
+// TrimSpaces removes empty strings from string array
+func TrimSpaces(items []string) []string {
+	return slices.DeleteFunc(items, func(e string) bool {
+		return e == ""
+	})
 }
 
 // PrepareAnnotations adds/removes listed annotations from given list of annotations
-func PrepareAnnotations(annotations string, items []string, remove bool) string {
+func PrepareAnnotations(annotations string, addItems []string, removeItems []string) string {
 	result := strings.Split(annotations, ",")
-	if remove {
-		result = FilterItems(result, items)
-	} else {
-		result = AddItems(result, items)
+	if removeItems != nil {
+		result = FilterItems(result, removeItems)
+	}
+	if addItems != nil {
+		result = AddItems(result, addItems)
 	}
 	return strings.Join(result, ",")
 }
