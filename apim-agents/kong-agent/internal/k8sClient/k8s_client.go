@@ -239,6 +239,19 @@ func GetK8sSecrets(labelSelectors map[string]string, k8sClient client.Client, co
 	return nil
 }
 
+// GetK8sSecret gets k8s secret resource from the Kubernetes cluster based on given name.
+func GetK8sSecret(name string, k8sClient client.Client, conf *config.Config) *corev1.Secret {
+	resource := &corev1.Secret{}
+	err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: conf.DataPlane.Namespace, Name: name}, resource)
+	// Retrieve all CRs from the Kubernetes cluster
+	if err != nil {
+		loggers.LoggerK8sClient.Errorf("Unable to list K8s Secret CRs: %v", err)
+	} else {
+		return resource
+	}
+	return nil
+}
+
 // UndeployAPICRs removes the API Custom Resources from the Kubernetes cluster based on API ID label.
 func UndeployAPICRs(apiID string, k8sClient client.Client) {
 	conf, errReadConfig := config.ReadConfigs()
@@ -351,7 +364,7 @@ func unDeploySecret(appID string, k8sClient client.Client, conf *config.Config) 
 			if err != nil {
 				loggers.LoggerK8sClient.Errorf("Unable to delete Secret CR: %v", err)
 			} else {
-				loggers.LoggerK8sClient.Infof("Updated Secret CR: %s", resource.Name)
+				loggers.LoggerK8sClient.Infof("Deleted Secret CR: %s", resource.Name)
 			}
 		}
 	}

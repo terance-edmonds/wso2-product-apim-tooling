@@ -144,20 +144,31 @@ func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
 		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationRegistrationEvent)
 		if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) {
 			logger.LoggerMessaging.Info("Application registration create")
-			// create secret CR
-			// TODO: add the real key
-			rsaPublicKey := ``
-			jwtCredentialSecretConfig := map[string]string{
-				"algorithm":      "RS512",
-				"key":            applicationRegistrationEvent.ConsumerKey,
-				"rsa_public_key": rsaPublicKey,
+			issuerSecrets := internalk8sClient.GetK8sSecrets(map[string]string{"type": "issuer"}, c, conf)
+			logger.LoggerMessaging.Infof("issuer secrets: %+v\n\n", issuerSecrets)
+			if len(issuerSecrets) == 0 {
+				logger.LoggerMessaging.Errorf("No issuers are found")
+			} else {
+				// create secret CR for each issuer and add as a jwt authenticating credential to consumer
+				credentials := []string{}
+				for _, issuerSecret := range issuerSecrets {
+					rsaPublicKey := issuerSecret.Data["public_key"]
+					logger.LoggerMessaging.Infof("issuer public key: %v\n\n", rsaPublicKey)
+					logger.LoggerMessaging.Infof("issuer public key string: %v\n\n", string(rsaPublicKey))
+					jwtCredentialSecretConfig := map[string]string{
+						"algorithm":      "RS256",
+						"key":            applicationRegistrationEvent.ConsumerKey,
+						"rsa_public_key": string(rsaPublicKey),
+					}
+					jwtCredentialSecret := transformer.GenerateK8sCredentialSecret(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, pkgConstants.KongJwtSecretName, jwtCredentialSecretConfig)
+					jwtCredentialSecret.Namespace = conf.DataPlane.Namespace
+					// deploy secret CR
+					internalk8sClient.DeploySecretCR(jwtCredentialSecret, c)
+					credentials = append(credentials, jwtCredentialSecret.ObjectMeta.Name)
+				}
+				// update consumer with issuer credentials
+				internalk8sClient.UpdateKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, c, conf, credentials)
 			}
-			jwtCredentialSecret := transformer.GenerateK8sCredentialSecret(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, "jwt", jwtCredentialSecretConfig)
-			jwtCredentialSecret.Namespace = conf.DataPlane.Namespace
-			// deploy CR
-			internalk8sClient.DeploySecretCR(jwtCredentialSecret, c)
-			credentials := []string{jwtCredentialSecret.ObjectMeta.Name}
-			internalk8sClient.UpdateKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, c, conf, credentials)
 		} else if strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
 			logger.LoggerMessaging.Info("Application registration remove")
 			jwtCredentialSecretName := transformer.GenerateSecretName(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, pkgConstants.KongJwtSecretName)

@@ -28,6 +28,8 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 )
 
+var allowedTimeUnits = map[string]string{"min": "minute", "hours": "hour", "days": "day"}
+
 // GetUniqueIDForAPI will generate a unique ID for newly created APIs
 func GetUniqueIDForAPI(name, version, organization string) string {
 	concatenatedString := strings.Join([]string{organization, name, version}, "-")
@@ -90,9 +92,26 @@ func GenerateJSON(data KongPluginConfig) []byte {
 	return jsonBytes
 }
 
+// PrepareRateLimit adds the corresponding rate limit name and values to kong plugin config
+func PrepareRateLimit(rateLimitConfig *KongPluginConfig, unit string, requestsPerUnit int) {
+	// Add corresponding rate limit configuration
+	if unitName, ok := allowedTimeUnits[unit]; ok {
+		(*rateLimitConfig)[unitName] = requestsPerUnit
+	} else {
+		loggers.LoggerUtils.Errorf("Time unit value not found: %v", unit)
+	}
+}
+
 // generateSHA1Hash returns the SHA1 hash for the given string
 func generateSHA1Hash(input string) string {
 	h := sha1.New() /* #nosec */
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// PrepareSecretName converts string for a k8s secret
+func PrepareSecretName(name string) string {
+	lowercaseString := strings.ToLower(name)
+	result := strings.ReplaceAll(lowercaseString, " ", "-")
+	return result
 }

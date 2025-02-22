@@ -34,13 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	retryCount int = 5
-)
-
-var retryAttempt int
-var allowedTimeUnits = map[string]string{"min": "minute", "hours": "hour", "days": "day"}
-
 // FetchRateLimitPoliciesOnEvent fetches the policies from the control plane on the start up and notification event updates
 func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c client.Client) {
 	// Read configurations and derive the eventHub details
@@ -60,20 +53,18 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c 
 					// TODO: implement ai rate limits
 					logger.LoggerSynchronizer.Printf("AI API Quota ratelimit policy %v", policy)
 				} else {
-					rateLimitConfig := transformer.KongPluginConfig{
-						"limit_by": "consumer",
+					if policy.DefaultLimit.RequestCount.TimeUnit != "" {
+						rateLimitConfig := transformer.KongPluginConfig{
+							"limit_by": "consumer",
+						}
+						// Add corresponding rate limit configuration
+						transformer.PrepareRateLimit(&rateLimitConfig, policy.DefaultLimit.RequestCount.TimeUnit, policy.DefaultLimit.RequestCount.UnitTime)
+						// Create and deploy rate-limit plugins
+						ratelimitPlugin := transformer.GenerateRateLimitPlugin(nil, "", rateLimitConfig)
+						ratelimitPlugin.ObjectMeta.Name = transformer.GeneratePolicyCRName(policy.Name, policy.TenantDomain, "rate-limiting", "policy")
+						ratelimitPlugin.Namespace = conf.DataPlane.Namespace
+						internalk8sClient.DeployKongPluginCR(ratelimitPlugin, c)
 					}
-					// Add corresponding rate limit configuration
-					if unitName, ok := allowedTimeUnits[policy.DefaultLimit.RequestCount.TimeUnit]; ok {
-						rateLimitConfig[unitName] = policy.DefaultLimit.RequestCount.UnitTime
-					} else {
-						logger.LoggerSynchronizer.Errorf("Time unit value not found: %v", policy)
-					}
-					// Create and deploy rate-limit plugins
-					ratelimitPlugin := transformer.GenerateRateLimitPlugin(nil, "", rateLimitConfig)
-					ratelimitPlugin.ObjectMeta.Name = transformer.GeneratePolicyCRName(policy.Name, policy.TenantDomain, "rate-limiting", "policy")
-					ratelimitPlugin.Namespace = conf.DataPlane.Namespace
-					internalk8sClient.DeployKongPluginCR(ratelimitPlugin, c)
 				}
 			}
 		}
@@ -82,10 +73,10 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c 
 
 // FetchSubscriptionRateLimitPoliciesOnEvent fetches the policies from the control plane on the start up and notification event updates
 func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organization string, c client.Client, cleanupDeletedPolicies bool) {
-	// Read configurations and derive the eventHub details
+	// read configurations and derive the eventHub details
 	conf, errReadConfig := config.ReadConfigs()
 	if errReadConfig != nil {
-		// This has to be error. For debugging purpose info
+		// this has to be error. For debugging purpose info
 		logger.LoggerSynchronizer.Errorf("Error reading configs: %v", errReadConfig)
 	}
 
@@ -102,13 +93,9 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 					rateLimitConfig := transformer.KongPluginConfig{
 						"limit_by": "consumer",
 					}
-					// Add corresponding rate limit configuration
-					if unitName, ok := allowedTimeUnits[policy.DefaultLimit.RequestCount.TimeUnit]; ok {
-						rateLimitConfig[unitName] = policy.DefaultLimit.RequestCount.UnitTime
-					} else {
-						logger.LoggerSynchronizer.Errorf("Time unit value not found: %v", policy)
-					}
-					// Create and deploy subscription rate-limit plugins
+					// add corresponding rate limit configuration
+					transformer.PrepareRateLimit(&rateLimitConfig, policy.DefaultLimit.RequestCount.TimeUnit, policy.DefaultLimit.RequestCount.UnitTime)
+					// create and deploy subscription rate-limit plugins
 					ratelimitPlugin := transformer.GenerateRateLimitPlugin(nil, "", rateLimitConfig)
 					ratelimitPlugin.ObjectMeta.Name = transformer.GeneratePolicyCRName(policy.Name, policy.TenantDomain, "rate-limiting", "subscription")
 					ratelimitPlugin.Namespace = conf.DataPlane.Namespace

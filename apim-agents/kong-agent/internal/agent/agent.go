@@ -46,4 +46,6 @@ func Run(conf *config.Config, mgr manager.Manager) {
 	}
 	// Load initial Subscription Rate Limit data from control plane
 	synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent("", "", mgr.GetClient(), true)
+
+	synchronizer.FetchKeyManagersOnStartUp(mgr.GetClient())
 }

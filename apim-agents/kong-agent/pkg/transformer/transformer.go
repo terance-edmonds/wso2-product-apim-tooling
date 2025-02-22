@@ -46,23 +46,24 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 	}
 	apiUniqueID := GetUniqueIDForAPI(apkConf.Name, apkConf.Version, organizationID)
 
-	// Create endpoints
+	// create endpoints
 	createdEndpoints := utils.GetEndpoints(apkConf)
 
 	// ACL Plugin (for subscription)
 	// create and add route restriction with Kong ACL plugin into k8s artifacts
 	if apkConf.SubscriptionValidation {
 		kongACLPlugin := createAndAddACLPlugin(&k8sArtifact, nil, "api")
-		// Only in Kong Enterprise
+		// * Only in Kong Enterprise
 		// kongACLPlugin.Ordering = &kong.PluginOrdering{
 		// 	Before: map[string][]string{
 		// 		"access": {"jwt"},
 		// 	},
 		// }
+
 		kongPlugins = append(kongPlugins, kongACLPlugin.ObjectMeta.Name)
 	}
 
-	// Handle authentications
+	// handle authentications
 	authentications := *apkConf.Authentication
 	for _, authentication := range authentications {
 		if !authentication.Enabled {
@@ -72,22 +73,35 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 		// OAuth2 JWT Plugin (for OAuth2 jwt authentication)
 		if authentication.AuthType == pkgConstants.OAuth2 {
 			kongJwtPlugin := createAndAddJWTPlugin(&k8sArtifact, nil, "api")
-			// Only in Kong Enterprise
+			// * Only in Kong Enterprise
 			// kongJwtPlugin.Ordering = &kong.PluginOrdering{
 			// 	After: map[string][]string{
 			// 		"access": {"acl"},
 			// 	},
 			// }
+
 			kongPlugins = append(kongPlugins, kongJwtPlugin.ObjectMeta.Name)
 		}
 	}
 
+	// create ratelimit policies
+	if apkConf.RateLimit != nil {
+		rateLimitConfig := KongPluginConfig{
+			"limit_by": "service",
+		}
+		PrepareRateLimit(&rateLimitConfig, apkConf.RateLimit.Unit, apkConf.RateLimit.RequestsPerUnit)
+		kongRateLimitPlugin := GenerateRateLimitPlugin(nil, "api", rateLimitConfig)
+
+		k8sArtifact.KongPlugins[kongRateLimitPlugin.ObjectMeta.Name] = kongRateLimitPlugin
+		kongPlugins = append(kongPlugins, kongRateLimitPlugin.ObjectMeta.Name)
+	}
+
 	// HTTPRoute
-	// Generate production http routes
+	// generate production http routes
 	if endpoints, ok := createdEndpoints[constants.PRODUCTION_TYPE]; ok {
 		generateHTTPRoutes(&k8sArtifact, &apkConf, organizationID, endpoints, constants.PRODUCTION_TYPE, apiUniqueID, kongPlugins)
 	}
-	// Generate sandbox http routes
+	// generate sandbox http routes
 	if endpoints, ok := createdEndpoints[constants.SANDBOX_TYPE]; ok {
 		generateHTTPRoutes(&k8sArtifact, &apkConf, organizationID, endpoints, constants.SANDBOX_TYPE, apiUniqueID, kongPlugins)
 	}
@@ -183,7 +197,7 @@ func createAndAddACLPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation
 func createAndAddJWTPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation, targetRef string) *v1.KongPlugin {
 	config := KongPluginConfig{
 		"run_on_preflight": true,
-		"key_claim_name":   "iss",
+		"key_claim_name":   "client_id",
 		"header_names": []string{
 			"authorization",
 		},
@@ -239,5 +253,21 @@ func GenerateK8sCredentialSecret(applicationUUID string, identifier string, cred
 		StringData: data,
 	}
 	secret.Labels[k8APPUuidField] = applicationUUID
+	return &secret
+}
+
+// GenerateK8sSecret handles the k8s secret generation
+func GenerateK8sSecret(name string, labels map[string]string, data map[string]string) *corev1.Secret {
+	secret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   PrepareSecretName(name),
+			Labels: labels,
+		},
+		StringData: data,
+	}
 	return &secret
 }
