@@ -31,6 +31,7 @@ import (
 func ProcessEvents(config *config.Config, c client.Client, agent agent.Agent) {
 	msg.InitiateJMSConnection(config.ControlPlane.BrokerConnectionParameters.EventListeningEndpoints)
 	go handleNotification(c, agent)
+	go handleKMConfiguration(c, agent)
 
 	// run agent specific event handlers
 	logger.LoggerAgent.Info("Running gateway event handler...")

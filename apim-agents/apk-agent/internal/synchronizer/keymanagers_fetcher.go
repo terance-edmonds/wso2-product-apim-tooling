@@ -25,21 +25,13 @@ package synchronizer
 
 import (
 	"context"
-	"encoding/json"
-	"io/ioutil"
-	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	dpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha2"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
-	pkgAuth "github.com/wso2/product-apim-tooling/apim-agent/pkg/auth"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub"
 	eventhubTypes "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
 	sync "github.com/wso2/product-apim-tooling/apim-agent/pkg/synchronizer"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
 	k8sclient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
 	"k8s.io/apimachinery/pkg/labels"
@@ -47,109 +39,43 @@ import (
 )
 
 const (
-	keyManagersEndpoint string = "internal/data/v1/keymanagers"
-	retryCount          int    = 5
+	retryCount int = 5
 )
 
 var retryAttempt int
 
 // FetchKeyManagersOnStartUp pulls the Key managers calling to the API manager
-// API Manager returns a .zip file as a response and this function
-// returns a byte slice of that ZIP file.
 func FetchKeyManagersOnStartUp(c client.Client) {
-	logger.LoggerSynchronizer.Info("Fetching KeyManagers from Control Plane.")
-
 	// Read configurations and derive the eventHub details
 	conf, errReadConfig := config.ReadConfigs()
 	if errReadConfig != nil {
 		// This has to be error. For debugging purpose info
 		logger.LoggerSynchronizer.Errorf("Error reading configs: %v", errReadConfig)
 	}
-	// Populate data from the config
-	ehConfigs := conf.ControlPlane
-	ehURL := ehConfigs.ServiceURL
-	// If the eventHub URL is configured with trailing slash
-	if strings.HasSuffix(ehURL, "/") {
-		ehURL += keyManagersEndpoint
-	} else {
-		ehURL += "/" + keyManagersEndpoint
-	}
-	logger.LoggerSynchronizer.Debugf("Fetching KeyManagers from the URL %v: ", ehURL)
 
-	ehUname := ehConfigs.Username
-	ehPass := ehConfigs.Password
-	basicAuth := "Basic " + pkgAuth.GetBasicAuth(ehUname, ehPass)
-
-	// Check if TLS is enabled
-	skipSSL := ehConfigs.SkipSSLVerification
-
-	// Create a HTTP request
-	req, err := http.NewRequest("GET", ehURL, nil)
-	if err != nil {
-		logger.LoggerSynchronizer.Errorf("Error while creating http request for Key Manager Endpoint : %v", err)
-	}
-
-	var queryParamMap map[string]string
-
-	if queryParamMap != nil && len(queryParamMap) > 0 {
-		q := req.URL.Query()
-		// Making necessary query parameters for the request
-		for queryParamKey, queryParamValue := range queryParamMap {
-			q.Add(queryParamKey, queryParamValue)
+	resolvedKeyManagers, errorMsg := sync.FetchKeyManagersOnStartUp(c)
+	if resolvedKeyManagers != nil {
+		if len(resolvedKeyManagers) == 0 && errorMsg != "" {
+			go retryFetchData(conf, errorMsg, c)
+		} else {
+			applyAllKeyManagerConfiguration(c, resolvedKeyManagers)
 		}
-		req.URL.RawQuery = q.Encode()
-	}
-	// Setting authorization header
-	req.Header.Set(sync.Authorization, basicAuth)
-
-	//Todo: Need to set ALL when APIM Fix is available
-	req.Header.Set("xWSO2Tenant", "ALL")
-
-	// Make the request
-	logger.LoggerSynchronizer.Debug("Sending the control plane request")
-	resp, err := tlsutils.InvokeControlPlane(req, skipSSL)
-	var errorMsg string
-	if err != nil {
-		errorMsg = "Error occurred while calling the REST API: " + keyManagersEndpoint
-		go retryFetchData(conf, errorMsg, err, c)
-		return
-	}
-	responseBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		errorMsg = "Error occurred while reading the response received for: " + keyManagersEndpoint
-		go retryFetchData(conf, errorMsg, err, c)
-		return
-	}
-
-	if resp.StatusCode == http.StatusOK {
-		var keyManagers []eventhubTypes.KeyManager
-		err := json.Unmarshal(responseBytes, &keyManagers)
-		if err != nil {
-			logger.LoggerSynchronizer.Errorf("Error occurred while unmarshelling Key Managers event data %v", err)
-			return
-		}
-		logger.LoggerSynchronizer.Infof("Key Managers received: %v", keyManagers)
-		resolvedKeyManagers := eventhub.MarshalKeyManagers(&keyManagers)
-		applyAllKeymanagerConfifuration(c, resolvedKeyManagers)
-	} else {
-		errorMsg = "Failed to fetch data! " + keyManagersEndpoint + " responded with " +
-			strconv.Itoa(resp.StatusCode)
-		go retryFetchData(conf, errorMsg, err, c)
 	}
 }
 
-func retryFetchData(conf *config.Config, errorMessage string, err error, c client.Client) {
+func retryFetchData(conf *config.Config, errorMessage string, c client.Client) {
 	logger.LoggerSynchronizer.Debugf("Time Duration for retrying: %v",
 		conf.ControlPlane.RetryInterval*time.Second)
 	time.Sleep(conf.ControlPlane.RetryInterval * time.Second)
 	FetchKeyManagersOnStartUp(c)
 	retryAttempt++
 	if retryAttempt >= retryCount {
-		logger.LoggerSynchronizer.Errorf(errorMessage, err)
+		logger.LoggerSynchronizer.Error(errorMessage)
 		return
 	}
 }
-func applyAllKeymanagerConfifuration(c client.Client, resolvedKeyManagers []eventhubTypes.ResolvedKeyManager) error {
+
+func applyAllKeyManagerConfiguration(c client.Client, resolvedKeyManagers []eventhubTypes.ResolvedKeyManager) error {
 	tokenIssuersFromK8s, _, err := retrieveAllTokenIssuers(c, "")
 	if err != nil {
 		return err

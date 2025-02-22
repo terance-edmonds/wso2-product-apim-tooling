@@ -19,6 +19,8 @@ package agent
 
 import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
+	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -44,4 +46,6 @@ type Agent interface {
 	HandlePolicyEvents(data []byte, eventType string, client client.Client)
 	// HandleAIProviderEvents to process AI Provider related events
 	HandleAIProviderEvents(data []byte, eventType string, client client.Client)
+	// HandleKMConfiguration to handle Key Manager configurations
+	HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventKeyManagerNotification, client client.Client)
 }

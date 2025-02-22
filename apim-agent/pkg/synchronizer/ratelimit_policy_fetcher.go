@@ -137,9 +137,9 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string) ([
 		for _, policy := range rateLimitPolicies {
 			if policy.DefaultLimit.RequestCount.TimeUnit == "min" {
 				policy.DefaultLimit.RequestCount.TimeUnit = "Minute"
-			} else if policy.DefaultLimit.RequestCount.TimeUnit == "hour" {
+			} else if policy.DefaultLimit.RequestCount.TimeUnit == "hours" {
 				policy.DefaultLimit.RequestCount.TimeUnit = "Hour"
-			} else if policy.DefaultLimit.RequestCount.TimeUnit == "day" {
+			} else if policy.DefaultLimit.RequestCount.TimeUnit == "days" {
 				policy.DefaultLimit.RequestCount.TimeUnit = "Day"
 			}
 			managementserver.AddRateLimitPolicy(policy)
