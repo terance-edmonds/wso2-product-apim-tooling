@@ -85,7 +85,10 @@ func applyAllKeyManagerConfiguration(c client.Client, resolvedKeyManagers []even
 
 	for _, resolvedKeyManager := range resolvedKeyManagers {
 		if resolvedKeyManager.KeyManagerConfig.CertificateType == "PEM" {
-			publicKey := ExtractPublicKey(resolvedKeyManager.KeyManagerConfig.CertificateValue)
+			publicKey, err := ExtractPublicKey(resolvedKeyManager.KeyManagerConfig.CertificateValue)
+			if err != nil {
+				return err
+			}
 
 			config := map[string]string{
 				"issuer":     resolvedKeyManager.KeyManagerConfig.Issuer,
@@ -104,28 +107,31 @@ func applyAllKeyManagerConfiguration(c client.Client, resolvedKeyManagers []even
 }
 
 // ExtractPublicKey takes a PEM encoded certificate as input and returns the public key as a string
-func ExtractPublicKey(encodedPemCert string) string {
-	logger.LoggerMessaging.Infof("=============certificate: \n%v\n", encodedPemCert)
+func ExtractPublicKey(encodedPemCert string) (string, error) {
 	pemCert, err := base64.StdEncoding.DecodeString(encodedPemCert)
 	if err != nil {
 		logger.LoggerMessaging.Errorf("Failed to decode certificate: %v", err)
+		return "", err
 	}
 
-	// Decode the PEM certificate
+	// decode the PEM certificate
 	block, _ := pem.Decode([]byte(pemCert))
 	if block == nil {
 		logger.LoggerMessaging.Error("Failed to parse PEM block containing the certificate")
+		return "", nil
 	}
 
-	// Parse the certificate
+	// parse the certificate
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		logger.LoggerMessaging.Errorf("Failed to parse certificate: %v", err)
+		return "", err
 	}
 
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
 	if err != nil {
 		logger.LoggerMessaging.Errorf("Failed to marshal public key: %v", err)
+		return "", err
 	}
 
 	pubKeyPem := pem.EncodeToMemory(&pem.Block{
@@ -133,5 +139,5 @@ func ExtractPublicKey(encodedPemCert string) string {
 		Bytes: publicKeyBytes,
 	})
 
-	return string(pubKeyPem)
+	return string(pubKeyPem), nil
 }

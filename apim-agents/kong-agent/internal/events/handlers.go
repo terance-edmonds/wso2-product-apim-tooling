@@ -14,10 +14,8 @@ import (
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
 	internalutils "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/utils"
-	pkgConstants "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/constants"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/synchronizer"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/transformer"
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -49,13 +47,7 @@ func HandleLifeCycleEvents(data []byte) {
 		Context: apiEvent.APIContext, Version: apiEvent.APIVersion, Provider: apiEvent.APIProvider}
 
 	logger.LoggerMessaging.Infof("API event data %v", apiEventObj)
-
-	conf, _ := config.ReadConfigs()
-	configuredEnvs := conf.ControlPlane.EnvironmentLabels
 	logger.LoggerMessaging.Debugf("%s : %s API life cycle state change event triggered", apiEvent.APIName, apiEvent.APIVersion)
-	if len(configuredEnvs) == 0 {
-		configuredEnvs = append(configuredEnvs, config.DefaultGatewayName)
-	}
 }
 
 // HandleAPIEvents to process api related data
@@ -115,200 +107,6 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 			internalk8sClient.UndeployAPICRs(apiEvent.UUID, c)
 			break
 		}
-	}
-}
-
-// HandleApplicationEvents to process application related events
-func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
-	conf, _ := config.ReadConfigs()
-	configuredEnvs := conf.ControlPlane.EnvironmentLabels
-	if len(configuredEnvs) == 0 {
-		configuredEnvs = append(configuredEnvs, config.DefaultGatewayName)
-	}
-
-	if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) ||
-		strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
-		var applicationRegistrationEvent msg.ApplicationRegistrationEvent
-		appRegEventErr := json.Unmarshal([]byte(string(data)), &applicationRegistrationEvent)
-		if appRegEventErr != nil {
-			logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Application Registration event data %v", appRegEventErr)
-			return
-		}
-
-		if !belongsToTenant(applicationRegistrationEvent.TenantDomain) {
-			logger.LoggerMessaging.Debugf("Application Registration event for the Consumer Key : %s is dropped due to having non related tenantDomain : %s",
-				applicationRegistrationEvent.ConsumerKey, applicationRegistrationEvent.TenantDomain)
-			return
-		}
-
-		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationRegistrationEvent)
-		if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) {
-			logger.LoggerMessaging.Info("Application registration create")
-			issuerSecrets := internalk8sClient.GetK8sSecrets(map[string]string{"type": "issuer"}, c, conf)
-			logger.LoggerMessaging.Infof("issuer secrets: %+v\n\n", issuerSecrets)
-			if len(issuerSecrets) == 0 {
-				logger.LoggerMessaging.Errorf("No issuers are found")
-			} else {
-				// create secret CR for each issuer and add as a jwt authenticating credential to consumer
-				credentials := []string{}
-				for _, issuerSecret := range issuerSecrets {
-					rsaPublicKey := issuerSecret.Data["public_key"]
-					logger.LoggerMessaging.Infof("issuer public key: %v\n\n", rsaPublicKey)
-					logger.LoggerMessaging.Infof("issuer public key string: %v\n\n", string(rsaPublicKey))
-					jwtCredentialSecretConfig := map[string]string{
-						"algorithm":      "RS256",
-						"key":            applicationRegistrationEvent.ConsumerKey,
-						"rsa_public_key": string(rsaPublicKey),
-					}
-					jwtCredentialSecret := transformer.GenerateK8sCredentialSecret(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, pkgConstants.KongJwtSecretName, jwtCredentialSecretConfig)
-					jwtCredentialSecret.Namespace = conf.DataPlane.Namespace
-					// deploy secret CR
-					internalk8sClient.DeploySecretCR(jwtCredentialSecret, c)
-					credentials = append(credentials, jwtCredentialSecret.ObjectMeta.Name)
-				}
-				// update consumer with issuer credentials
-				internalk8sClient.UpdateKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, c, conf, credentials)
-			}
-		} else if strings.EqualFold(eventConstants.RemoveApplicationKeyMapping, eventType) {
-			logger.LoggerMessaging.Info("Application registration remove")
-			jwtCredentialSecretName := transformer.GenerateSecretName(applicationRegistrationEvent.ApplicationUUID, applicationRegistrationEvent.KeyType, pkgConstants.KongJwtSecretName)
-			credentials := []string{jwtCredentialSecretName}
-			internalk8sClient.RemoveKongConsumerCredential(applicationRegistrationEvent.ApplicationUUID, "", c, conf, credentials)
-			internalk8sClient.UnDeploySecretCR(jwtCredentialSecretName, c, conf)
-		}
-	} else {
-		var applicationEvent msg.ApplicationEvent
-		appEventErr := json.Unmarshal([]byte(string(data)), &applicationEvent)
-		if appEventErr != nil {
-			logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Application event data %v", appEventErr)
-			return
-		}
-
-		if !belongsToTenant(applicationEvent.TenantDomain) {
-			logger.LoggerMessaging.Debugf("Application event for the Application : %s (with uuid %s) is dropped due to having non related tenantDomain : %s",
-				applicationEvent.ApplicationName, applicationEvent.UUID, applicationEvent.TenantDomain)
-			return
-		}
-
-		logger.LoggerMessaging.Infof("Application event data %v", applicationEvent)
-
-		if isLaterEvent(applicationListTimeStampMap, fmt.Sprint(applicationEvent.ApplicationID), applicationEvent.TimeStamp) {
-			return
-		}
-
-		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationEvent)
-		if applicationEvent.Event.Type == eventConstants.ApplicationCreate {
-			logger.LoggerMessaging.Info("Application create")
-		} else if applicationEvent.Event.Type == eventConstants.ApplicationUpdate {
-			logger.LoggerMessaging.Info("Application update")
-		} else if applicationEvent.Event.Type == eventConstants.ApplicationDelete {
-			internalk8sClient.UndeployAPPCRs(applicationEvent.UUID, c)
-		} else {
-			logger.LoggerMessaging.Warnf("Application Event Type is not recognized for the Event under "+
-				"Application UUID %s", applicationEvent.UUID)
-			return
-		}
-	}
-}
-
-// HandleSubscriptionEvents to process subscription related events
-func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
-	conf, _ := config.ReadConfigs()
-	configuredEnvs := conf.ControlPlane.EnvironmentLabels
-	if len(configuredEnvs) == 0 {
-		configuredEnvs = append(configuredEnvs, config.DefaultGatewayName)
-	}
-
-	var subscriptionEvent msg.SubscriptionEvent
-	subEventErr := json.Unmarshal([]byte(string(data)), &subscriptionEvent)
-	if subEventErr != nil {
-		logger.LoggerMessaging.Errorf("Error occurred while unmarshalling Subscription event data %v", subEventErr)
-		return
-	}
-	if !belongsToTenant(subscriptionEvent.TenantDomain) {
-		logger.LoggerMessaging.Debugf("Subscription event for the Application : %s and API %s is dropped due to having non related tenantDomain : %s",
-			subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, subscriptionEvent.TenantDomain)
-		return
-	}
-
-	if isLaterEvent(subsriptionsListTimeStampMap, fmt.Sprint(subscriptionEvent.SubscriptionID), subscriptionEvent.TimeStamp) {
-		return
-	}
-
-	logger.LoggerMessaging.Infof("===========sub \n%+v\n", subscriptionEvent)
-	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
-		// create consumer
-		consumer := transformer.CreateConsumer(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID)
-		consumer.Namespace = conf.DataPlane.Namespace
-
-		// create kong acl secret CR
-		aclCredentialSecretConfig := map[string]string{
-			"group": subscriptionEvent.APIUUID,
-		}
-		aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, "acl", aclCredentialSecretConfig)
-		aclCredentialSecret.Namespace = conf.DataPlane.Namespace
-		credentials := []string{aclCredentialSecret.ObjectMeta.Name}
-
-		// update consumer subscription limit plugin annotation
-		subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
-		logger.LoggerMessaging.Infof("Subscription Policy: %v", subscriptionPolicy)
-		if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
-			rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
-			addAnnotations := []string{rateLimitCRName}
-			consumer.Annotations["konghq.com/plugins"] = utils.PrepareAnnotations(consumer.Annotations["konghq.com/plugins"], addAnnotations, nil)
-		}
-
-		// get available jwt credentials for the application
-		jwtSecretCredentials := internalk8sClient.GetK8sSecrets(map[string]string{
-			"applicationUUID":       subscriptionEvent.ApplicationUUID,
-			"konghq.com/credential": "jwt",
-		}, c, conf)
-		for _, jwtSecretCredential := range jwtSecretCredentials {
-			credentials = append(credentials, jwtSecretCredential.Name)
-		}
-
-		// update consumer credentials
-		consumer.Credentials = utils.AddItems(consumer.Credentials, credentials)
-		// deploy acl secret
-		internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
-		// deploy consumer
-		internalk8sClient.DeployKongConsumerCR(consumer, c)
-	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionUpdate {
-		var removeAnnotations []string
-		var addAnnotations []string
-		// retrieving current subscription policy name
-		consumerName := transformer.GenerateConsumerName(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID)
-		consumer := internalk8sClient.GetKongConsumerCR(consumerName, c, conf)
-
-		if consumer != nil {
-			if annotations, ok := consumer.Annotations["konghq.com/plugins"]; ok {
-				annotationsArr := strings.Split(annotations, ",")
-				for _, name := range annotationsArr {
-					logger.LoggerMessaging.Infoln(name)
-					if strings.Contains(name, "subscription") && strings.Contains(name, "rate-limiting") {
-						removeAnnotations = append(removeAnnotations, name)
-						break
-					}
-				}
-			}
-		}
-
-		// updating new subscription policy name
-		subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
-		if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
-			rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
-			addAnnotations = append(addAnnotations, rateLimitCRName)
-		}
-
-		internalk8sClient.UpdateKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, c, conf, addAnnotations, removeAnnotations)
-	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionDelete {
-		// remove acl secret credential
-		aclSecretCredentialName := transformer.GenerateSecretName(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, "acl")
-		internalk8sClient.UnDeploySecretCR(aclSecretCredentialName, c, conf)
-
-		// remove kong consumer CR
-		consumerName := transformer.GenerateConsumerName(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID)
-		internalk8sClient.UnDeployKongConsumerCR(consumerName, c, conf)
 	}
 }
 

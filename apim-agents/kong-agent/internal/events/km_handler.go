@@ -53,18 +53,20 @@ func HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventK
 
 				// prepare key manager certificate as a secret and deploy
 				if resolvedKeyManager.KeyManagerConfig.CertificateType == "PEM" {
-					publicKey := synchronizer.ExtractPublicKey(resolvedKeyManager.KeyManagerConfig.CertificateValue)
-					config := map[string]string{
-						"issuer":     resolvedKeyManager.KeyManagerConfig.Issuer,
-						"public_key": publicKey,
-					}
-					secretLabels := map[string]string{
-						"type": "issuer",
-					}
-					keyManagerSecret := transformer.GenerateK8sSecret(notification.Event.PayloadData.Name, secretLabels, config)
-					keyManagerSecret.Namespace = conf.DataPlane.Namespace
+					publicKey, err := synchronizer.ExtractPublicKey(resolvedKeyManager.KeyManagerConfig.CertificateValue)
+					if err == nil && publicKey != "" {
+						config := map[string]string{
+							"issuer":     resolvedKeyManager.KeyManagerConfig.Issuer,
+							"public_key": publicKey,
+						}
+						secretLabels := map[string]string{
+							"type": "issuer",
+						}
+						keyManagerSecret := transformer.GenerateK8sSecret(notification.Event.PayloadData.Name, secretLabels, config)
+						keyManagerSecret.Namespace = conf.DataPlane.Namespace
 
-					k8sclient.DeploySecretCR(keyManagerSecret, c)
+						k8sclient.DeploySecretCR(keyManagerSecret, c)
+					}
 				} else {
 					logger.LoggerMessaging.Infoln("Only PEM certificate type is supported")
 					k8sclient.UnDeploySecretCR(notification.Event.PayloadData.Name, c, conf)

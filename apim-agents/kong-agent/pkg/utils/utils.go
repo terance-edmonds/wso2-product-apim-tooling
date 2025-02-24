@@ -50,6 +50,17 @@ func TrimSpaces(items []string) []string {
 	})
 }
 
+// PrepareCredentials adds/removes listed credentials from given list of credentials
+func PrepareCredentials(credentials []string, addItems []string, removeItems []string) []string {
+	if removeItems != nil {
+		credentials = FilterItems(credentials, removeItems)
+	}
+	if addItems != nil {
+		credentials = AddItems(credentials, addItems)
+	}
+	return credentials
+}
+
 // PrepareAnnotations adds/removes listed annotations from given list of annotations
 func PrepareAnnotations(annotations string, addItems []string, removeItems []string) string {
 	result := strings.Split(annotations, ",")

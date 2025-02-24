@@ -74,3 +74,20 @@ func GenerateRateLimitPlugin(operation *types.Operation, targetRef string, confi
 		},
 	}
 }
+
+// GenerateCorsPlugin handles the Kong Cors configuration plugin generation
+func GenerateCorsPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
+	return &v1.KongPlugin{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "KongPlugin",
+			APIVersion: "configuration.konghq.com/v1",
+		},
+		PluginName: "cors",
+		ObjectMeta: metav1.ObjectMeta{
+			Name: GeneratePluginCRName(operation, targetRef, "cors"),
+		},
+		Config: apiextensionsv1.JSON{
+			Raw: GenerateJSON(config),
+		},
+	}
+}

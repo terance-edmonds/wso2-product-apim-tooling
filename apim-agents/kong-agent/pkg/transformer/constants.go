@@ -19,10 +19,11 @@ package transformer
 
 const (
 	// K8s CRD fields
-	k8RevisionField      = "revisionID"
-	k8APIUuidField       = "apiUUID"
-	k8APPUuidField       = "applicationUUID"
-	k8sOrganizationField = "organization"
+	k8sRevisionField       = "revisionID"
+	k8sAPIUuidField        = "apiUUID"
+	k8APPUuidField         = "applicationUUID"
+	k8sOrganizationField   = "organization"
+	k8sAPIEnvironmentField = "environment"
 
 	// K8s resource names
 	k8sIngressClassName = "kong"

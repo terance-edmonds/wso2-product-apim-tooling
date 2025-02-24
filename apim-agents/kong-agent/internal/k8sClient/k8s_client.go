@@ -370,47 +370,27 @@ func unDeploySecret(appID string, k8sClient client.Client, conf *config.Config) 
 	}
 }
 
-// UpdateKongConsumerCredential adds new credentials to KongConsumer Resources from the Kubernetes cluster based on application ID label.
-func UpdateKongConsumerCredential(appID string, k8sClient client.Client, conf *config.Config, credentials []string) {
+// UpdateKongConsumerCredential updates credentials in KongConsumer Resources from the Kubernetes cluster based on application ID label.
+func UpdateKongConsumerCredential(appID string, env string, k8sClient client.Client, conf *config.Config, addCredentials []string, removeCredentials []string) {
 	resourceList := &v1.KongConsumerList{}
-	err := k8sClient.List(context.Background(), resourceList, &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{"applicationUUID": appID})})
+	labelSelectors := map[string]string{"applicationUUID": appID}
+	if env != "" {
+		labelSelectors["environment"] = env
+	}
+
+	err := k8sClient.List(context.Background(), resourceList, &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(labelSelectors)})
 	// Retrieve all CRs from the Kubernetes cluster
 	if err != nil {
 		loggers.LoggerK8sClient.Errorf("Unable to list KongConsumer CRs: %v", err)
 	} else {
 		for _, resource := range resourceList.Items {
-			// update credentials
-			resource.Credentials = append(resource.Credentials, credentials...)
+			// update plugin credentials
+			resource.Credentials = utils.PrepareCredentials(resource.Credentials, addCredentials, removeCredentials)
 			err := k8sClient.Update(context.Background(), &resource, &client.UpdateOptions{})
 			if err != nil {
 				loggers.LoggerK8sClient.Errorf("Unable to update KongConsumer CR: %v", err)
 			} else {
 				loggers.LoggerK8sClient.Infof("Updated KongConsumer CR: %s", resource.Name)
-			}
-		}
-	}
-}
-
-// RemoveKongConsumerCredential removes credentials from KongConsumer Resources from the Kubernetes cluster based on application and api ID label.
-func RemoveKongConsumerCredential(appID string, apiUUID string, k8sClient client.Client, conf *config.Config, credentials []string) {
-	resourceList := &v1.KongConsumerList{}
-	labelsSelectors := map[string]string{"applicationUUID": appID}
-	if apiUUID != "" {
-		labelsSelectors["apiUUID"] = apiUUID
-	}
-	err := k8sClient.List(context.Background(), resourceList, &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(labelsSelectors)})
-	// Retrieve all CRs from the Kubernetes cluster
-	if err != nil {
-		loggers.LoggerK8sClient.Errorf("Unable to list KongConsumer CRs: %v", err)
-	} else {
-		for _, resource := range resourceList.Items {
-			// update credentials
-			resource.Credentials = utils.FilterItems(resource.Credentials, credentials)
-			err := k8sClient.Update(context.Background(), &resource, &client.UpdateOptions{})
-			if err != nil {
-				loggers.LoggerK8sClient.Errorf("Unable to remove KongConsumer CR credential: %v", err)
-			} else {
-				loggers.LoggerK8sClient.Infof("Updated KongConsumer CR credential: %s", resource.Name)
 			}
 		}
 	}

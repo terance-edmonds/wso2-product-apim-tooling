@@ -73,14 +73,19 @@ func GeneratePolicyCRName(policName string, tenantDomain string, pluginName stri
 }
 
 // GenerateConsumerName generates a reference name for a consumer
-func GenerateConsumerName(applicationUUID string, consumerName string) string {
-	consumerHash := fmt.Sprintf("%x", sha1.Sum([]byte(applicationUUID+consumerName)))
-	return "consumer-" + consumerHash
+func GenerateConsumerName(subscriptionUUID, applicationUUID string, consumerName string, environment string) string {
+	consumerHash := fmt.Sprintf("%x", sha1.Sum([]byte(subscriptionUUID+applicationUUID+consumerName)))
+	return "consumer-" + consumerHash + "-" + environment
 }
 
 // GenerateSecretName generates a reference name for a k8s secret
 func GenerateSecretName(applicationUUID string, apiUUID string, secretType string) string {
 	return "secret-" + generateSHA1Hash(applicationUUID+apiUUID) + "-" + secretType
+}
+
+// GenerateACLGroupName generates a kong acl API group name
+func GenerateACLGroupName(apiUUID string, environment string) string {
+	return "api-" + apiUUID + "-" + environment
 }
 
 // GenerateJSON converts go struct to json
