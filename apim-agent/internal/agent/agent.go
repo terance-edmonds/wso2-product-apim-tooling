@@ -80,7 +80,8 @@ func init() {
 
 // Run starts the Event listener and gateway agent.
 func Run(conf *config.Config) {
-	agent, err := loadAgent(conf.Agent.PluginPath)
+	logger.LoggerAgent.Infof("Loading %v agent...", conf.Agent.Gateway)
+	agent, err := agentReg.GetAgent(conf.Agent.Gateway)
 	if err != nil {
 		logger.LoggerAgent.Errorf("Agent loader error: %v. ", err)
 		return

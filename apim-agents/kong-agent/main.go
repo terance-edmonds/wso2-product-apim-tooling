@@ -1,4 +1,4 @@
-package main
+package kongAgent
 
 import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
@@ -66,11 +66,14 @@ func (a Agent) HandleAIProviderEvents(data []byte, eventType string, client clie
 	events.HandleAIProviderEvents(data, eventType, client)
 }
 
+// HandleScopeEvents to process scope related events
+func (a Agent) HandleScopeEvents(data []byte, eventType string, client client.Client) {
+	loggers.LoggerAgent.Infof("Triggered: HandleScopeEvents")
+	events.HandleScopeEvents(data, eventType, client)
+}
+
 // HandleKMConfiguration to handle Key Manager configurations
 func (a Agent) HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventKeyManagerNotification, client client.Client) {
 	loggers.LoggerAgent.Println("Triggered: HandleKMConfiguration")
 	events.HandleKMConfiguration(keyManager, notification, client)
 }
-
-// AgentPlugin exports the agent as a variable
-var AgentPlugin Agent

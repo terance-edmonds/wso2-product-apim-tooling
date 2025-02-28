@@ -77,22 +77,29 @@ type Config struct {
 	DataPlane    dataPlane    `toml:"dataPlane"`
 	Agent        agent        `toml:"agent"`
 	// Metric represents configurations to expose/export go metrics
-	Metrics metrics `toml:"metrics"`
+	Metrics      metrics      `toml:"metrics"`
+	GatewayAgent gatewayAgent `toml:"gatewayAgent"`
 }
 type agent struct {
 	Enabled    bool
 	Keystore   keystore
 	TrustStore truststore
 	Mode       string
-	PluginPath string
+	Gateway    string
 }
 type keystore struct {
 	KeyPath  string
 	CertPath string
 }
-
 type truststore struct {
 	Location string
+}
+
+// gatewayAgent can have any value that is passed to the gateway specific agent
+type gatewayAgent map[string]interface{}
+
+func (g gatewayAgent) Get(key string) interface{} {
+	return g[key]
 }
 
 // ControlPlane struct contains configurations related to the API Manager

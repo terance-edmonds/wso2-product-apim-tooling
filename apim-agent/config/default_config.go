@@ -56,12 +56,13 @@ var defaultConfig = &Config{
 		TrustStore: truststore{
 			Location: "/home/wso2/security/truststore",
 		},
-		Mode:       "DPtoCP",
-		PluginPath: "/home/wso2/agents/apk.so",
+		Mode:    "DPtoCP",
+		Gateway: "apk",
 	},
 	Metrics: metrics{
 		Enabled: false,
 		Port:    18006,
 		Type:    "prometheus",
 	},
+	GatewayAgent: gatewayAgent{},
 }

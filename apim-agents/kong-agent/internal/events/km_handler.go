@@ -47,9 +47,7 @@ func HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventK
 		} else if keyManager != nil {
 			if strings.EqualFold(msg.ActionAdd, notification.Event.PayloadData.Action) ||
 				strings.EqualFold(msg.ActionUpdate, notification.Event.PayloadData.Action) {
-				logger.LoggerMessaging.Infof("Key Managers received: %v", keyManager)
 				resolvedKeyManager := eventhub.MarshalKeyManager(keyManager)
-				logger.LoggerMessaging.Infof("Resolved Key Managers received: %+v", resolvedKeyManager)
 
 				// prepare key manager certificate as a secret and deploy
 				if resolvedKeyManager.KeyManagerConfig.CertificateType == "PEM" {

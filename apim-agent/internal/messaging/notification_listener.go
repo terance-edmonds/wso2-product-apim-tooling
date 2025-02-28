@@ -99,6 +99,8 @@ func processNotificationEvent(conf *config.Config, notification *msg.EventNotifi
 		}
 	} else if strings.Contains(eventType, constants.AIProviderEventType) {
 		agent.HandleAIProviderEvents(decodedByte, eventType, c)
+	} else if strings.Contains(eventType, constants.ScopeEventType) {
+		agent.HandleScopeEvents(decodedByte, eventType, c)
 	}
 	// other events will ignore including HEALTH_CHECK event
 	return nil

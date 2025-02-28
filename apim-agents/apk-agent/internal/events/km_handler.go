@@ -25,7 +25,6 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	k8sclient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
-	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -37,9 +36,7 @@ func HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventK
 		} else if keyManager != nil {
 			if strings.EqualFold(msg.ActionAdd, notification.Event.PayloadData.Action) ||
 				strings.EqualFold(msg.ActionUpdate, notification.Event.PayloadData.Action) {
-				logger.LoggerMessaging.Infof("Key Managers received: %v", keyManager)
 				resolvedKeyManager := eventhub.MarshalKeyManager(keyManager)
-				logger.LoggerMessaging.Infof("Resolved Key Managers received: %v", resolvedKeyManager)
 				if strings.EqualFold(msg.ActionAdd, notification.Event.PayloadData.Action) {
 					k8sclient.CreateAndUpdateTokenIssuersCR(resolvedKeyManager, c)
 				} else {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/terance-edmonds/wso2-apk-k8s-go-lib/config/constants"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	eventConstants "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/constants"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
@@ -35,7 +36,7 @@ func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
 			return
 		}
 
-		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationRegistrationEvent)
+		logger.LoggerMessaging.Infof("Application registration event received: %+v", applicationRegistrationEvent)
 		if strings.EqualFold(eventConstants.ApplicationRegistration, eventType) {
 			issuerSecrets := internalk8sClient.GetK8sSecrets(map[string]string{"type": "issuer"}, c, conf)
 			if len(issuerSecrets) == 0 {
@@ -72,15 +73,17 @@ func HandleApplicationEvents(data []byte, eventType string, c client.Client) {
 			return
 		}
 
-		logger.LoggerMessaging.Infof("Application event data %v", applicationEvent)
-
 		if isLaterEvent(applicationListTimeStampMap, fmt.Sprint(applicationEvent.ApplicationID), applicationEvent.TimeStamp) {
 			return
 		}
 
-		logger.LoggerMessaging.Infof("============ application \n%+v\n", applicationEvent)
+		logger.LoggerMessaging.Infof("Application event received: %+v", applicationEvent)
 		if applicationEvent.Event.Type == eventConstants.ApplicationCreate {
-			logger.LoggerMessaging.Info("Application create")
+			/* create an application level consumer CR (this can be used when subscription is not supported but jwt authentication is required) */
+			// production
+			createApplicationConsumer(applicationEvent.UUID, c, conf, constants.PRODUCTION_TYPE)
+			// sandbox
+			createApplicationConsumer(applicationEvent.UUID, c, conf, constants.SANDBOX_TYPE)
 		} else if applicationEvent.Event.Type == eventConstants.ApplicationUpdate {
 			logger.LoggerMessaging.Info("Application update")
 		} else if applicationEvent.Event.Type == eventConstants.ApplicationDelete {
@@ -108,4 +111,11 @@ func createIssuerKongSecretCredential(issuerSecret v1.Secret, c client.Client, c
 	internalk8sClient.DeploySecretCR(jwtCredentialSecret, c)
 
 	return jwtCredentialSecret
+}
+
+func createApplicationConsumer(applicationUUID string, c client.Client, conf *config.Config, environment string) {
+	consumer := transformer.CreateConsumer(applicationUUID, environment)
+	consumer.Namespace = conf.DataPlane.Namespace
+
+	internalk8sClient.DeployKongConsumerCR(consumer, c)
 }

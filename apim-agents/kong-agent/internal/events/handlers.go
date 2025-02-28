@@ -84,7 +84,8 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 	apiEventObj := types.API{UUID: apiEvent.UUID, APIID: apiEvent.APIID, Name: apiEvent.APIName,
 		Context: apiEvent.APIContext, Version: apiEvent.APIVersion, Provider: apiEvent.APIProvider}
 
-	logger.LoggerMessaging.Infof("API event data %v", apiEventObj)
+	logger.LoggerMessaging.Infof("API event data %+v", apiEventObj)
+	logger.LoggerMessaging.Infof("API event received %+v", apiEvent)
 
 	//Per each revision, synchronization should happen.
 	if strings.EqualFold(eventConstants.DeployAPIToGateway, apiEvent.Event.Type) {
@@ -121,8 +122,7 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 		return
 	}
 
-	logger.LoggerMessaging.Infof("===========policy \n%+v\n", policyEvent)
-
+	logger.LoggerMessaging.Infof("Policy event received: %+v", policyEvent)
 	if strings.EqualFold(eventType, eventConstants.PolicyCreate) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
@@ -173,8 +173,20 @@ func HandleAIProviderEvents(data []byte, eventType string, client client.Client)
 		logger.LoggerMessaging.Errorf("Error occurred while unmarshalling AI Provider event data %v", aiProviderEventErr)
 		return
 	}
-	logger.LoggerMessaging.Infof("===========aiprovider \n%+v\n", aiProviderEvent)
 
+	logger.LoggerMessaging.Infof("AI provider event received: %+v", aiProviderEvent)
+}
+
+// HandleScopeEvents to process scope related events
+func HandleScopeEvents(data []byte, eventType string, client client.Client) {
+	var scopeEvent msg.ScopeEvent
+	scopeEventErr := json.Unmarshal([]byte(string(data)), &scopeEvent)
+	if scopeEventErr != nil {
+		logger.LoggerMessaging.Errorf("Error occurred while unmarshalling scope event data %v", scopeEventErr)
+		return
+	}
+
+	logger.LoggerMessaging.Infof("Scope event received: %+v", scopeEvent)
 }
 
 func belongsToTenant(tenantDomain string) bool {

@@ -39,16 +39,23 @@ func GetUniqueIDForAPI(name, version, organization string) string {
 	return hex.EncodeToString(hashedValue)
 }
 
-// GenerateOperationsMatrix generates a 2d array for the given number of operations
-func GenerateOperationsMatrix(totalOperations int, maxColumns int) [][]types.Operation {
-	rows := (totalOperations + maxColumns - 1) / maxColumns // Calculate the number of rows (ceil division)
-	// Initialize operationsArray
-	operationsArray := make([][]types.Operation, rows)
-	remainingOperations := totalOperations
-	for i := range operationsArray {
-		columnsInRow := min(maxColumns, remainingOperations)
-		operationsArray[i] = make([]types.Operation, columnsInRow)
-		remainingOperations -= columnsInRow
+// GenerateOperationsMatrix creates a 2D array for operations
+func GenerateOperationsMatrix(specialOps int, normalOps int, maxColumns int) [][]types.Operation {
+	// special operations need their own rows
+	totalRows := specialOps + ((normalOps + maxColumns - 1) / maxColumns)
+	operationsArray := make([][]types.Operation, totalRows)
+	row := 0
+	// allocate special operations rows (1 operation per row)
+	for i := 0; i < specialOps; i++ {
+		operationsArray[row] = make([]types.Operation, 1)
+		row++
+	}
+	// allocate normal operations (maxColumns per row)
+	for row < totalRows {
+		columnsInRow := min(maxColumns, normalOps)
+		operationsArray[row] = make([]types.Operation, columnsInRow)
+		normalOps -= columnsInRow
+		row++
 	}
 	return operationsArray
 }
@@ -73,8 +80,8 @@ func GeneratePolicyCRName(policName string, tenantDomain string, pluginName stri
 }
 
 // GenerateConsumerName generates a reference name for a consumer
-func GenerateConsumerName(subscriptionUUID, applicationUUID string, consumerName string, environment string) string {
-	consumerHash := fmt.Sprintf("%x", sha1.Sum([]byte(subscriptionUUID+applicationUUID+consumerName)))
+func GenerateConsumerName(applicationUUID string, environment string) string {
+	consumerHash := fmt.Sprintf("%x", sha1.Sum([]byte(applicationUUID+environment)))
 	return "consumer-" + consumerHash + "-" + environment
 }
 

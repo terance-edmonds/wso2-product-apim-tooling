@@ -46,6 +46,8 @@ type Agent interface {
 	HandlePolicyEvents(data []byte, eventType string, client client.Client)
 	// HandleAIProviderEvents to process AI Provider related events
 	HandleAIProviderEvents(data []byte, eventType string, client client.Client)
+	// HandleScopeEvents to process Scope related events
+	HandleScopeEvents(data []byte, eventType string, client client.Client)
 	// HandleKMConfiguration to handle Key Manager configurations
 	HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventKeyManagerNotification, client client.Client)
 }

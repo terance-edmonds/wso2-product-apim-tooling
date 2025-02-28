@@ -48,7 +48,7 @@ tasks.named('go_revive_run').configure {
     finalizedBy go_test
 }
 
-tasks.named('go_build_cgo_enabled').configure {
+tasks.named('go_linux_build').configure {
     dependsOn go_revive_run
     dependsOn go_vet
     println("Running go build")
@@ -56,7 +56,7 @@ tasks.named('go_build_cgo_enabled').configure {
 }
 
 task build{
-    dependsOn go_build_cgo_enabled
+    dependsOn go_linux_build
     dependsOn docker_build
 }
 

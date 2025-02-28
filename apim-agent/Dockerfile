@@ -64,7 +64,6 @@ USER ${APK_USER_ID}
 COPY resources/conf/config.toml conf/
 COPY resources/check_health.sh .
 COPY resources/conf/log_config.toml conf/
-COPY agents agents/
 
 COPY ./${TARGETARCH}/main apim-agent
 

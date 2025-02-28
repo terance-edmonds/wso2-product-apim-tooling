@@ -14,7 +14,6 @@ import (
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/transformer"
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -38,7 +37,6 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 		return
 	}
 
-	logger.LoggerMessaging.Infof("===========sub \n%+v\n", subscriptionEvent)
 	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
 		// create production consumer and acl credential
 		createSubscription(subscriptionEvent, c, conf, constants.PRODUCTION_TYPE)
@@ -58,26 +56,25 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 }
 
 func createSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client, conf *config.Config, environment string) {
-	consumer := transformer.CreateConsumer(subscriptionEvent.SubscriptionUUID, subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, environment)
-	consumer.Namespace = conf.DataPlane.Namespace
+	addCredentials := []string{}
+	addAnnotations := []string{}
 
-	// create kong acl secret CR
+	// create and deploy kong acl secret CR
 	aclCredentialSecretConfig := map[string]string{
 		"group": transformer.GenerateACLGroupName(subscriptionEvent.APIUUID, environment),
 	}
 	subscriptionIdentifier := subscriptionEvent.APIUUID + environment
 	aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, subscriptionIdentifier, "acl", aclCredentialSecretConfig)
 	aclCredentialSecret.Namespace = conf.DataPlane.Namespace
-	credentials := []string{aclCredentialSecret.ObjectMeta.Name}
+	addCredentials = append(addCredentials, aclCredentialSecret.ObjectMeta.Name)
+	internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
 
 	// update consumer subscription limit plugin annotation
 	subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
 	logger.LoggerMessaging.Infof("Subscription Policy: %v", subscriptionPolicy)
 	if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
 		rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
-		addAnnotations := []string{rateLimitCRName}
-
-		consumer.Annotations["konghq.com/plugins"] = utils.PrepareAnnotations(consumer.Annotations["konghq.com/plugins"], addAnnotations, nil)
+		addAnnotations = append(addAnnotations, rateLimitCRName)
 	}
 
 	// get available jwt credentials for the application
@@ -87,22 +84,21 @@ func createSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 		"konghq.com/credential": "jwt",
 	}, c, conf)
 	for _, jwtSecretCredential := range jwtSecretCredentials {
-		credentials = append(credentials, jwtSecretCredential.Name)
+		addCredentials = append(addCredentials, jwtSecretCredential.Name)
 	}
 
 	// update consumers credentials
-	consumer.Credentials = utils.AddItems(consumer.Credentials, credentials)
-	// deploy acl secret
-	internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
-	// deploy consumer
-	internalk8sClient.DeployKongConsumerCR(consumer, c)
+	internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, environment, c, conf, addCredentials, nil)
+	// update consumers annotations
+	internalk8sClient.UpdateKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, environment, c, conf, addAnnotations, nil)
+
 }
 
 func updateSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client, conf *config.Config, environment string) {
 	var removeAnnotations []string
 	var addAnnotations []string
 	// retrieving current production subscription policy
-	consumerName := transformer.GenerateConsumerName(subscriptionEvent.SubscriptionUUID, subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, environment)
+	consumerName := transformer.GenerateConsumerName(subscriptionEvent.ApplicationUUID, environment)
 	consumer := internalk8sClient.GetKongConsumerCR(consumerName, c, conf)
 
 	if consumer == nil {
@@ -127,7 +123,7 @@ func updateSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 					addAnnotations = append(addAnnotations, rateLimitCRName)
 				}
 
-				internalk8sClient.UpdateKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, c, conf, addAnnotations, removeAnnotations)
+				internalk8sClient.UpdateKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, environment, c, conf, addAnnotations, removeAnnotations)
 			}
 		}
 
@@ -149,12 +145,13 @@ func updateSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 }
 
 func removeSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client, conf *config.Config, environment string) {
-	// remove acl secret credential
 	subscriptionIdentifier := subscriptionEvent.APIUUID + environment
 	aclSecretCredentialName := transformer.GenerateSecretName(subscriptionEvent.ApplicationUUID, subscriptionIdentifier, "acl")
-	internalk8sClient.UnDeploySecretCR(aclSecretCredentialName, c, conf)
 
-	// remove kong consumer CR
-	consumerName := transformer.GenerateConsumerName(subscriptionEvent.SubscriptionUUID, subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, environment)
-	internalk8sClient.UnDeployKongConsumerCR(consumerName, c, conf)
+	// remove secret from kong consumer CR
+	removeCredentials := []string{aclSecretCredentialName}
+	internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, environment, c, conf, nil, removeCredentials)
+
+	// remove acl secret credential
+	internalk8sClient.UnDeploySecretCR(aclSecretCredentialName, c, conf)
 }

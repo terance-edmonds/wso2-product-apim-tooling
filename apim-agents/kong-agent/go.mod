@@ -5,7 +5,7 @@ go 1.23.3
 require (
 	github.com/kong/kubernetes-configuration v0.0.36
 	github.com/sirupsen/logrus v1.9.3
-	github.com/terance-edmonds/wso2-apk-k8s-go-lib v1.0.5
+	github.com/terance-edmonds/wso2-apk-k8s-go-lib v1.0.7
 	github.com/wso2/product-apim-tooling/apim-agent v0.0.0-00010101000000-000000000000
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.32.1
