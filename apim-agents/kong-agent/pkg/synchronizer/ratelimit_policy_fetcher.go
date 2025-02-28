@@ -60,7 +60,7 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c 
 						// Add corresponding rate limit configuration
 						transformer.PrepareRateLimit(&rateLimitConfig, policy.DefaultLimit.RequestCount.TimeUnit, policy.DefaultLimit.RequestCount.UnitTime)
 						// Create and deploy rate-limit plugins
-						ratelimitPlugin := transformer.GenerateRateLimitPlugin(nil, "", rateLimitConfig)
+						ratelimitPlugin := transformer.GenerateRateLimitPlugin(nil, "", rateLimitConfig, true)
 						ratelimitPlugin.ObjectMeta.Name = transformer.GeneratePolicyCRName(policy.Name, policy.TenantDomain, "rate-limiting", "policy")
 						ratelimitPlugin.Namespace = conf.DataPlane.Namespace
 						internalk8sClient.DeployKongPluginCR(ratelimitPlugin, c)
@@ -96,7 +96,7 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 					// add corresponding rate limit configuration
 					transformer.PrepareRateLimit(&rateLimitConfig, policy.DefaultLimit.RequestCount.TimeUnit, policy.DefaultLimit.RequestCount.UnitTime)
 					// create and deploy subscription rate-limit plugins
-					ratelimitPlugin := transformer.GenerateRateLimitPlugin(nil, "", rateLimitConfig)
+					ratelimitPlugin := transformer.GenerateRateLimitPlugin(nil, "", rateLimitConfig, true)
 					ratelimitPlugin.ObjectMeta.Name = transformer.GeneratePolicyCRName(policy.Name, policy.TenantDomain, "rate-limiting", "subscription")
 					ratelimitPlugin.Namespace = conf.DataPlane.Namespace
 					internalk8sClient.DeployKongPluginCR(ratelimitPlugin, c)

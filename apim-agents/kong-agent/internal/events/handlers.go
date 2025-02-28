@@ -89,6 +89,9 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 
 	//Per each revision, synchronization should happen.
 	if strings.EqualFold(eventConstants.DeployAPIToGateway, apiEvent.Event.Type) {
+		// undeploy current API if exists
+		internalk8sClient.UndeployAPICRs(apiEvent.UUID, c)
+		// deploy new API
 		go internalutils.FetchAPIsOnEvent(conf, &apiEvent.UUID, c)
 	}
 

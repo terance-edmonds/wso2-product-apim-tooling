@@ -25,7 +25,6 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/utils"
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	k8error "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -35,11 +34,6 @@ import (
 
 // DeployHTTPRouteCR applies the given HttpRoute struct to the Kubernetes cluster.
 func DeployHTTPRouteCR(httpRoute *gwapiv1.HTTPRoute, k8sClient client.Client) {
-	yamlCr, err := yaml.Marshal(httpRoute)
-	if err != nil {
-		loggers.LoggerK8sClient.Error("failed to marshal yaml")
-	}
-	loggers.LoggerK8sClient.Infof("Yaml: %v", string(yamlCr))
 	crHTTPRoute := &gwapiv1.HTTPRoute{}
 	// Retrieve CR from Kubernetes cluster
 	if err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: httpRoute.ObjectMeta.Namespace, Name: httpRoute.Name}, crHTTPRoute); err != nil {

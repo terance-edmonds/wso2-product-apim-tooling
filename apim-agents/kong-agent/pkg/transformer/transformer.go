@@ -76,10 +76,26 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 			"limit_by": "route",
 		}
 		PrepareRateLimit(&rateLimitConfig, apkConf.RateLimit.Unit, apkConf.RateLimit.RequestsPerUnit)
-		kongRateLimitPlugin := GenerateRateLimitPlugin(nil, "api", rateLimitConfig)
+		kongRateLimitPlugin := GenerateRateLimitPlugin(nil, "api", rateLimitConfig, true)
 
 		k8sArtifact.KongPlugins[kongRateLimitPlugin.ObjectMeta.Name] = kongRateLimitPlugin
 		kongPlugins = append(kongPlugins, kongRateLimitPlugin.ObjectMeta.Name)
+	}
+
+	// create cors configurations
+	if apkConf.CorsConfig != nil {
+		apkCorsConf := apkConf.CorsConfig
+
+		corsConfig := KongPluginConfig{
+			"origins":     apkCorsConf.AccessControlAllowOrigins,
+			"credentials": apkCorsConf.AccessControlAllowCredentials,
+			"headers":     apkCorsConf.AccessControlAllowHeaders,
+			"methods":     apkCorsConf.AccessControlAllowMethods,
+		}
+		kongCorsPlugin := GenerateCorsPlugin(nil, "api", corsConfig, apkCorsConf.CORSConfigurationEnabled)
+
+		k8sArtifact.KongPlugins[kongCorsPlugin.ObjectMeta.Name] = kongCorsPlugin
+		kongPlugins = append(kongPlugins, kongCorsPlugin.ObjectMeta.Name)
 	}
 
 	// HTTPRoute
@@ -185,6 +201,10 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 			}
 			httpRoute.ObjectMeta.Labels[k8sAPIEnvironmentField] = endpointType
 
+			// prepare OPTIONS HTTPRoute
+			optionsHTTPRoute := prepareOptionsHTTPRoute(httpRoute)
+			k8sArtifact.HTTPRoutes[optionsHTTPRoute.ObjectMeta.Name] = optionsHTTPRoute
+
 			// handle ratelimit configuration if httproute has only one operation
 			if len(operations) == 1 {
 				operation := operations[0]
@@ -195,7 +215,7 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 						"limit_by": "route",
 					}
 					PrepareRateLimit(&rateLimitConfig, operation.RateLimit.Unit, operation.RateLimit.RequestsPerUnit)
-					rateLimitPlugin := GenerateRateLimitPlugin(&operation, "route", rateLimitConfig)
+					rateLimitPlugin := GenerateRateLimitPlugin(&operation, "route", rateLimitConfig, true)
 					k8sArtifact.KongPlugins[rateLimitPlugin.ObjectMeta.Name] = rateLimitPlugin
 
 					routeKongPlugins = append(routeKongPlugins, rateLimitPlugin.ObjectMeta.Name)
@@ -226,9 +246,32 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 			updateHTTPRouteAnnotations(httpRoute, annotationMap)
 
 			// store httproute in k8s artifacts
+			httpRoute.Labels["routeType"] = "api"
 			k8sArtifact.HTTPRoutes[httpRoute.ObjectMeta.Name] = httpRoute
 		}
 	}
+}
+
+func prepareOptionsHTTPRoute(httpRoute *gwapiv1.HTTPRoute) *gwapiv1.HTTPRoute {
+	optionsHttpRoute := httpRoute.DeepCopy()
+	optionsHttpRoute.Name = optionsHttpRoute.Name + "-options"
+	optionsHttpRoute.Labels["routeType"] = "options"
+
+	// update httproute annotation
+	annotationMap := map[string]string{
+		"konghq.com/strip-path": "true",
+	}
+	updateHTTPRouteAnnotations(optionsHttpRoute, annotationMap)
+
+	routeRuleMethod := gwapiv1.HTTPMethod("OPTIONS")
+	// change all route matches to OPTIONS
+	for _, routeRule := range optionsHttpRoute.Spec.Rules {
+		for _, routeRuleMatch := range routeRule.Matches {
+			routeRuleMatch.Method = &routeRuleMethod
+		}
+	}
+
+	return optionsHttpRoute
 }
 
 func prepareOperationsArray(apkConf *types.APKConf) [][]types.Operation {
@@ -277,7 +320,7 @@ func createAndAddACLPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation
 		"allow": allowList,
 	}
 	targetRef = k8sArtifact.APIUUID + "-" + targetRef + "-" + environment
-	aclPlugin := GenerateACLPlugin(operation, targetRef, config)
+	aclPlugin := GenerateACLPlugin(operation, targetRef, config, true)
 	k8sArtifact.KongPlugins[aclPlugin.ObjectMeta.Name] = aclPlugin
 	return aclPlugin
 }
@@ -295,7 +338,7 @@ func createAndAddJWTPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation
 		},
 	}
 	targetRef = k8sArtifact.APIUUID + "-" + targetRef
-	jwtPlugin := GenerateJWTPlugin(operation, targetRef, config)
+	jwtPlugin := GenerateJWTPlugin(operation, targetRef, config, true)
 	k8sArtifact.KongPlugins[jwtPlugin.ObjectMeta.Name] = jwtPlugin
 	return jwtPlugin
 }

@@ -25,7 +25,7 @@ import (
 )
 
 // GenerateACLPlugin handles the Kong ACL plugin generation
-func GenerateACLPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
+func GenerateACLPlugin(operation *types.Operation, targetRef string, config KongPluginConfig, enabled bool) *v1.KongPlugin {
 	return &v1.KongPlugin{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KongPlugin",
@@ -35,6 +35,7 @@ func GenerateACLPlugin(operation *types.Operation, targetRef string, config Kong
 		ObjectMeta: metav1.ObjectMeta{
 			Name: GeneratePluginCRName(operation, targetRef, "acl"),
 		},
+		Disabled: !enabled,
 		Config: apiextensionsv1.JSON{
 			Raw: GenerateJSON(config),
 		},
@@ -42,7 +43,7 @@ func GenerateACLPlugin(operation *types.Operation, targetRef string, config Kong
 }
 
 // GenerateJWTPlugin handles the Kong JWT plugin generation
-func GenerateJWTPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
+func GenerateJWTPlugin(operation *types.Operation, targetRef string, config KongPluginConfig, enabled bool) *v1.KongPlugin {
 	return &v1.KongPlugin{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KongPlugin",
@@ -52,6 +53,7 @@ func GenerateJWTPlugin(operation *types.Operation, targetRef string, config Kong
 		ObjectMeta: metav1.ObjectMeta{
 			Name: GeneratePluginCRName(operation, targetRef, "jwt"),
 		},
+		Disabled: !enabled,
 		Config: apiextensionsv1.JSON{
 			Raw: GenerateJSON(config),
 		},
@@ -59,7 +61,7 @@ func GenerateJWTPlugin(operation *types.Operation, targetRef string, config Kong
 }
 
 // GenerateRateLimitPlugin handles the Kong RateLimit plugin generation
-func GenerateRateLimitPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
+func GenerateRateLimitPlugin(operation *types.Operation, targetRef string, config KongPluginConfig, enabled bool) *v1.KongPlugin {
 	return &v1.KongPlugin{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KongPlugin",
@@ -69,6 +71,7 @@ func GenerateRateLimitPlugin(operation *types.Operation, targetRef string, confi
 		ObjectMeta: metav1.ObjectMeta{
 			Name: GeneratePluginCRName(operation, targetRef, "rate-limiting"),
 		},
+		Disabled: !enabled,
 		Config: apiextensionsv1.JSON{
 			Raw: GenerateJSON(config),
 		},
@@ -76,7 +79,7 @@ func GenerateRateLimitPlugin(operation *types.Operation, targetRef string, confi
 }
 
 // GenerateCorsPlugin handles the Kong Cors configuration plugin generation
-func GenerateCorsPlugin(operation *types.Operation, targetRef string, config KongPluginConfig) *v1.KongPlugin {
+func GenerateCorsPlugin(operation *types.Operation, targetRef string, config KongPluginConfig, enabled bool) *v1.KongPlugin {
 	return &v1.KongPlugin{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KongPlugin",
@@ -86,6 +89,7 @@ func GenerateCorsPlugin(operation *types.Operation, targetRef string, config Kon
 		ObjectMeta: metav1.ObjectMeta{
 			Name: GeneratePluginCRName(operation, targetRef, "cors"),
 		},
+		Disabled: !enabled,
 		Config: apiextensionsv1.JSON{
 			Raw: GenerateJSON(config),
 		},
