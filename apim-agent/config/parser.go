@@ -21,6 +21,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -32,6 +33,9 @@ import (
 	logger "github.com/sirupsen/logrus"
 	pkgconf "github.com/wso2/apk/adapter/pkg/config"
 	"github.com/wso2/apk/adapter/pkg/logging"
+	"github.com/wso2/product-apim-tooling/apim-agent/internal/loggers"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -105,7 +109,37 @@ func ReadConfigs() (*Config, error) {
 
 		pkgconf.ResolveConfigEnvValues(reflect.ValueOf(&(adapterConfig.ControlPlane)).Elem(), "ControlPlane", true)
 	})
+
 	return adapterConfig, e
+}
+
+// FetchGatewayConfig fetches the values from config maps under gatewayAgent.configFrom attribute
+func FetchGatewayConfig(config *Config, k8sClient client.Client) {
+	conf := config.GatewayAgent
+
+	if configFrom, ok := conf.Get("configFrom").([]string); ok {
+		for _, configName := range configFrom {
+			configMap := getK8sConfigMap(configName, k8sClient, config)
+			if configMap != nil {
+				for k, v := range configMap.Data {
+					conf[k] = v
+				}
+			}
+		}
+	}
+}
+
+// getK8sConfigMap gets k8s config map resource from the Kubernetes cluster based on given name.
+func getK8sConfigMap(name string, k8sClient client.Client, conf *Config) *corev1.ConfigMap {
+	resource := &corev1.ConfigMap{}
+	// Retrieve CR from the Kubernetes cluster
+	err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: conf.DataPlane.Namespace, Name: name}, resource)
+	if err != nil {
+		loggers.LoggerUtils.Errorf("Unable to list K8s Secret CRs: %v", err)
+	} else {
+		return resource
+	}
+	return nil
 }
 
 // SetConfig sets the given configuration to the adapter configuration

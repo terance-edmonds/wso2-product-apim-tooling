@@ -39,6 +39,7 @@ const (
 	pkgMgtServer   = "github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 	pkgTransformer = "github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	pkgSync        = "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/synchronizer"
+	pkgWatcher     = "github.com/wso2/product-apim-tooling/apim-apk-agent/pkg/watcher"
 )
 
 // logger package references
@@ -50,6 +51,7 @@ var (
 	LoggerMgtServer   logging.Log
 	LoggerTransformer logging.Log
 	LoggerSync        logging.Log
+	LoggerWatcher     logging.Log
 )
 
 func init() {
@@ -65,5 +67,6 @@ func UpdateLoggers() {
 	LoggerMgtServer = logging.InitPackageLogger(pkgMgtServer)
 	LoggerTransformer = logging.InitPackageLogger(pkgTransformer)
 	LoggerSync = logging.InitPackageLogger(pkgSync)
+	LoggerWatcher = logging.InitPackageLogger(pkgWatcher)
 	logrus.Info("Updated loggers")
 }

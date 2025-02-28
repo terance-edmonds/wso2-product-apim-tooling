@@ -23,6 +23,8 @@ import (
 	v1alpha1 "github.com/kong/kubernetes-configuration/api/configuration/v1alpha1"
 	v1beta1 "github.com/kong/kubernetes-configuration/api/configuration/v1beta1"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/loggers"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/internal/watcher"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/synchronizer"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -48,4 +50,7 @@ func Run(conf *config.Config, mgr manager.Manager) {
 	synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent("", "", mgr.GetClient(), true)
 
 	synchronizer.FetchKeyManagersOnStartUp(mgr.GetClient())
+
+	loggers.LoggerAgent.Infof("Starting Kong CR Watcher...")
+	watcher.CRWatcher.Watch()
 }
