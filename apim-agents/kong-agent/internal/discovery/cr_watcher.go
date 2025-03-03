@@ -15,62 +15,72 @@
  *
  */
 
-package watcher
+package discovery
 
 import (
+	"sync"
+
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
+	discoveryPkg "github.com/wso2/product-apim-tooling/apim-agent/pkg/discovery"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
-	watcherPkg "github.com/wso2/product-apim-tooling/apim-agent/pkg/watcher"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Define the resources to watch
-var gvrs = []schema.GroupVersionResource{
-	{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"},
-	{Group: "configuration.konghq.com", Version: "v1", Resource: "kongplugins"},
-	{Group: "configuration.konghq.com", Version: "v1", Resource: "kongconsumers"},
-}
+var (
+	configOnce sync.Once
+	apiMutex   sync.RWMutex
+	gvrs       = []schema.GroupVersionResource{ // Define the resources to watch
+		{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"},
+	}
+	allowedTimeUnits = map[string]string{
+		"minute": "min",
+		"hour":   "hours",
+		"day":    "days",
+	}
+)
 
 // addResource handles the addition of a resource
 func addResource(u *unstructured.Unstructured) {
 	loggers.LoggerWatcher.Infof("Resource Added: %s/%s (Kind: %s)\n", u.GetNamespace(), u.GetName(), u.GetKind())
-	if u.GetKind() == "KongPlugin" {
-		if plugin, found, _ := unstructured.NestedString(u.Object, "plugin"); found {
-			loggers.LoggerWatcher.Infof("  Plugin Type: %s\n", plugin)
-		}
+	// Check for HTTPRoute configuration
+	if u.GetKind() == "HTTPRoute" {
+		handleAddHttpRouteResource(u)
 	}
 }
 
 // updateResource handles the update of a resource
 func updateResource(oldU, newU *unstructured.Unstructured) {
 	loggers.LoggerWatcher.Infof("Resource Updated: %s/%s (Kind: %s)\n", newU.GetNamespace(), newU.GetName(), newU.GetKind())
-	// Example: Check for changes in KongPlugin configuration
-	if newU.GetKind() == "KongPlugin" {
-		oldPlugin, _, _ := unstructured.NestedString(oldU.Object, "plugin")
-		newPlugin, _, _ := unstructured.NestedString(newU.Object, "plugin")
-		if oldPlugin != newPlugin {
-			loggers.LoggerWatcher.Infof("  Plugin Type Changed: %s -> %s\n", oldPlugin, newPlugin)
-		}
+	// Check for changes in HTTPRoute configuration
+	if newU.GetKind() == "HTTPRoute" {
+		handleUpdateHTTPRouteResource(oldU, newU)
 	}
 }
 
 // deleteResource handles the deletion of a resource
 func deleteResource(u *unstructured.Unstructured) {
 	loggers.LoggerWatcher.Infof("Resource Deleted: %s/%s (Kind: %s)\n", u.GetNamespace(), u.GetName(), u.GetKind())
+	// Check for HTTPRoute configuration
+	if u.GetKind() == "HTTPRoute" {
+		handleDeleteHttpRouteResource(u)
+	}
 }
 
-// Initialize CRWatcher with separate handler functions
-var CRWatcher *watcherPkg.CRWatcher
+// CRWatcher with separate handler functions
+var CRWatcher *discoveryPkg.CRWatcher
 
 func init() {
-	conf, _ := config.ReadConfigs()
+	configOnce.Do(func() {
+		conf, _ := config.ReadConfigs()
 
-	CRWatcher = &watcherPkg.CRWatcher{
-		Namespace:     conf.DataPlane.Namespace,
-		GroupVersions: gvrs,
-		AddFunc:       addResource,
-		UpdateFunc:    updateResource,
-		DeleteFunc:    deleteResource,
-	}
+		CRWatcher = &discoveryPkg.CRWatcher{
+			Namespace:     conf.DataPlane.Namespace,
+			GroupVersions: gvrs,
+			AddFunc:       addResource,
+			UpdateFunc:    updateResource,
+			DeleteFunc:    deleteResource,
+		}
+	})
 }

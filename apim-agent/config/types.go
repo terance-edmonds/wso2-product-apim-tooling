@@ -122,6 +122,9 @@ type controlPlane struct {
 	ClientID                   string
 	ClientSecret               string
 	Provider                   string
+	APIsRestPath               string
+	RestPort                   uint16
+	Host                       string
 }
 
 // Dataplane struct contains the configurations related to the APK
