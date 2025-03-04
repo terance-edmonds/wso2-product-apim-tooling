@@ -66,6 +66,7 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 		})
 		return
 	}
+	logger.LoggerMessaging.Infof("API event received %+v", apiEvent)
 
 	if !belongsToTenant(apiEvent.TenantDomain) {
 		apiName := apiEvent.APIName
@@ -85,7 +86,6 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 		Context: apiEvent.APIContext, Version: apiEvent.APIVersion, Provider: apiEvent.APIProvider}
 
 	logger.LoggerMessaging.Infof("API event data %+v", apiEventObj)
-	logger.LoggerMessaging.Infof("API event received %+v", apiEvent)
 
 	//Per each revision, synchronization should happen.
 	if strings.EqualFold(eventConstants.DeployAPIToGateway, apiEvent.Event.Type) {

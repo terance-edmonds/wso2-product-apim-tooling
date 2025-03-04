@@ -17,7 +17,6 @@
 package managementserver
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,7 +27,6 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agent/internal/constants"
 	logger "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
 
@@ -37,11 +35,6 @@ func init() {
 
 // StartInternalServer starts the internal server
 func StartInternalServer(port uint) {
-	cpConfig, err := config.ReadConfigs()
-	envLabel := []string{"Default"}
-	if err == nil {
-		envLabel = cpConfig.ControlPlane.EnvironmentLabels
-	}
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
@@ -65,66 +58,15 @@ func StartInternalServer(port uint) {
 		}
 		logger.LoggerMgtServer.Debugf("Recieved payload for endpoint /apis: %+v", event)
 		if event.Event == DeleteEvent {
-			logger.LoggerMgtServer.Infof("Delete event received with APIUUID: %s", event.API.APIUUID)
-			payload := []map[string]interface{}{
-				{
-					"revisionUuid":       event.API.RevisionID,
-					"name":               envLabel[0],
-					"vhost":              event.API.Vhost,
-					"displayOnDevportal": true,
-				},
-			}
-			jsonPayload, err := json.Marshal(payload)
-			logger.LoggerMgtServer.Debugf("Sending payload for revision undeploy: %+v", string(jsonPayload))
-			if err != nil {
-				logger.LoggerMgtServer.Errorf("Error while preparing payload to delete revision. Processed object: %+v", payload)
-				c.JSON(http.StatusInternalServerError, err.Error())
-				return
-			}
-			// Delete the api
-			errorUndeployRevision := utils.DeleteAPIRevision(event.API.APIUUID, event.API.RevisionID, string(jsonPayload))
-			if errorUndeployRevision != nil {
-				logger.LoggerMgtServer.Errorf("Error while undeploying api revision. RevisionId: %s, API ID: %s . Sending error response to Adapter.", event.API.RevisionID, event.API.APIUUID)
-				c.JSON(http.StatusServiceUnavailable, errorUndeployRevision.Error())
+			if err := HandleDeleteEvent(event); err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, map[string]string{"message": "Success"})
 		} else {
-			if strings.EqualFold(event.API.APIType, "rest") && event.API.Definition == "" {
-				event.API.Definition = utils.OpenAPIDefaultYaml
-			}
-			if strings.EqualFold(event.API.APIType, "rest") {
-				yaml, errJSONToYaml := JSONToYAML(event.API.Definition)
-				if errJSONToYaml == nil {
-					event.API.Definition = yaml
-				}
-			}
-			apiYaml, definition := createAPIYaml(&event)
-			deploymentContent := createDeployementYaml(event.API.Vhost)
-			logger.LoggerMgtServer.Debugf("Created apiYaml : %s, \n\n\n created definition file: %s", apiYaml, definition)
-			definitionPath := fmt.Sprintf("%s-%s/Definitions/swagger.yaml", event.API.APIName, event.API.APIVersion)
-			if strings.ToUpper(event.API.APIType) == "GRAPHQL" {
-				definitionPath = fmt.Sprintf("%s-%s/Definitions/schema.graphql", event.API.APIName, event.API.APIVersion)
-			}
-			zipFiles := []utils.ZipFile{{
-				Path:    fmt.Sprintf("%s-%s/api.yaml", event.API.APIName, event.API.APIVersion),
-				Content: apiYaml,
-			}, {
-				Path:    fmt.Sprintf("%s-%s/deployment_environments.yaml", event.API.APIName, event.API.APIVersion),
-				Content: deploymentContent,
-			}, {
-				Path:    definitionPath,
-				Content: definition,
-			}}
-			var buf bytes.Buffer
-			if err := utils.CreateZipFile(&buf, zipFiles); err != nil {
-				logger.LoggerMgtServer.Errorf("Error while creating apim zip file for api uuid: %s. Error: %+v", event.API.APIUUID, err)
-			}
-
-			id, revisionID, err := utils.ImportAPI(fmt.Sprintf("admin-%s-%s.zip", event.API.APIName, event.API.APIVersion), &buf)
+			id, revisionID, err := HandleCreateOrUpdateEvent(event)
 			if err != nil {
-				logger.LoggerMgtServer.Errorf("Error while importing API. Sending error response to Adapter.")
-				c.JSON(http.StatusServiceUnavailable, err.Error())
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 				return
 			}
 			c.JSON(http.StatusOK, map[string]string{"id": id, "revisionID": revisionID})

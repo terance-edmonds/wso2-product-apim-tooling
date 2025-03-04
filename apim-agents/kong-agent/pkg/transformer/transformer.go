@@ -31,13 +31,13 @@ import (
 	pkgConstants "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/pkg/constants"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 // GenerateCR handles the generation k8s artifacts
 func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts {
-	k8sArtifact := K8sArtifacts{APIUUID: apiUUID, HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute), Services: make(map[string]*corev1.Service), KongPlugins: map[string]*v1.KongPlugin{}}
 	kongPlugins := make([]string, 0)
 	var apkConf types.APKConf
 	err := yaml.Unmarshal([]byte(api), &apkConf)
@@ -45,6 +45,7 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 		logger.LoggerUtils.Errorf("Error while converting apk conf yaml to apk conf type: Error: %+v. \n", err)
 	}
 	apiUniqueID := GetUniqueIDForAPI(apkConf.Name, apkConf.Version, organizationID)
+	k8sArtifact := K8sArtifacts{APIName: apkConf.Name, APIUUID: apiUUID, HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute), Services: make(map[string]*corev1.Service), KongPlugins: map[string]*v1.KongPlugin{}}
 
 	// create endpoints
 	createdEndpoints := utils.GetEndpoints(apkConf)
@@ -58,7 +59,19 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 
 		// OAuth2 JWT Plugin (for OAuth2 jwt authentication)
 		if authentication.AuthType == pkgConstants.OAuth2 {
-			kongJwtPlugin := createAndAddJWTPlugin(&k8sArtifact, nil, "api")
+			kongJwtPlugin := createAndAddJWTPlugin(&k8sArtifact, nil, "api", authentication)
+			// * Only in Kong Enterprise
+			// kongJwtPlugin.Ordering = &kong.PluginOrdering{
+			// 	Before: map[string][]string{
+			// 		"access": {"acl"},
+			// 	},
+			// }
+
+			kongPlugins = append(kongPlugins, kongJwtPlugin.ObjectMeta.Name)
+		}
+		// OAuth2 JWT Plugin (for OAuth2 jwt authentication)
+		if authentication.AuthType == pkgConstants.APIKey {
+			kongJwtPlugin := createAndAddAPIKeyPlugin(&k8sArtifact, nil, "api", authentication)
 			// * Only in Kong Enterprise
 			// kongJwtPlugin.Ordering = &kong.PluginOrdering{
 			// 	Before: map[string][]string{
@@ -76,7 +89,7 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 			"limit_by": "route",
 		}
 		PrepareRateLimit(&rateLimitConfig, apkConf.RateLimit.Unit, apkConf.RateLimit.RequestsPerUnit)
-		kongRateLimitPlugin := GenerateRateLimitPlugin(nil, "api", rateLimitConfig, true)
+		kongRateLimitPlugin := GenerateKongPlugin(nil, kongRateLimitingPluginName, "api", rateLimitConfig, true)
 
 		k8sArtifact.KongPlugins[kongRateLimitPlugin.ObjectMeta.Name] = kongRateLimitPlugin
 		kongPlugins = append(kongPlugins, kongRateLimitPlugin.ObjectMeta.Name)
@@ -92,7 +105,7 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 			"headers":     apkCorsConf.AccessControlAllowHeaders,
 			"methods":     apkCorsConf.AccessControlAllowMethods,
 		}
-		kongCorsPlugin := GenerateCorsPlugin(nil, "api", corsConfig, apkCorsConf.CORSConfigurationEnabled)
+		kongCorsPlugin := GenerateKongPlugin(nil, kongCorsPluginName, "api", corsConfig, apkCorsConf.CORSConfigurationEnabled)
 
 		k8sArtifact.KongPlugins[kongCorsPlugin.ObjectMeta.Name] = kongCorsPlugin
 		kongPlugins = append(kongPlugins, kongCorsPlugin.ObjectMeta.Name)
@@ -165,7 +178,7 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 	// ACL Plugin (for subscription)
 	// create and add route restriction with Kong ACL plugin into k8s artifacts
 	if apkConf.SubscriptionValidation {
-		apiEnvironmentGroup := GenerateACLGroupName(k8sArtifact.APIUUID, endpointType)
+		apiEnvironmentGroup := GenerateACLGroupName(k8sArtifact.APIName, endpointType)
 		allowList := []string{apiEnvironmentGroup}
 		kongACLPlugin := createAndAddACLPlugin(k8sArtifact, nil, "api", endpointType, allowList)
 		// * Only in Kong Enterprise
@@ -206,16 +219,14 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 			k8sArtifact.HTTPRoutes[optionsHTTPRoute.ObjectMeta.Name] = optionsHTTPRoute
 
 			// handle ratelimit configuration if httproute has only one operation
-			if len(operations) == 1 {
-				operation := operations[0]
-
+			for _, operation := range operations {
 				// create and add a ratelimit plugin
 				if operation.RateLimit != nil {
 					rateLimitConfig := KongPluginConfig{
 						"limit_by": "route",
 					}
 					PrepareRateLimit(&rateLimitConfig, operation.RateLimit.Unit, operation.RateLimit.RequestsPerUnit)
-					rateLimitPlugin := GenerateRateLimitPlugin(&operation, "route", rateLimitConfig, true)
+					rateLimitPlugin := GenerateKongPlugin(&operation, kongRateLimitingPluginName, "route", rateLimitConfig, true)
 					k8sArtifact.KongPlugins[rateLimitPlugin.ObjectMeta.Name] = rateLimitPlugin
 
 					routeKongPlugins = append(routeKongPlugins, rateLimitPlugin.ObjectMeta.Name)
@@ -265,9 +276,9 @@ func prepareOptionsHTTPRoute(httpRoute *gwapiv1.HTTPRoute) *gwapiv1.HTTPRoute {
 
 	routeRuleMethod := gwapiv1.HTTPMethod("OPTIONS")
 	// change all route matches to OPTIONS
-	for _, routeRule := range optionsHttpRoute.Spec.Rules {
-		for _, routeRuleMatch := range routeRule.Matches {
-			routeRuleMatch.Method = &routeRuleMethod
+	for i, rule := range optionsHttpRoute.Spec.Rules {
+		for j := range rule.Matches {
+			optionsHttpRoute.Spec.Rules[i].Matches[j].Method = &routeRuleMethod
 		}
 	}
 
@@ -320,27 +331,57 @@ func createAndAddACLPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation
 		"allow": allowList,
 	}
 	targetRef = k8sArtifact.APIUUID + "-" + targetRef + "-" + environment
-	aclPlugin := GenerateACLPlugin(operation, targetRef, config, true)
+	aclPlugin := GenerateKongPlugin(operation, kongACLPluginName, targetRef, config, true)
 	k8sArtifact.KongPlugins[aclPlugin.ObjectMeta.Name] = aclPlugin
 	return aclPlugin
 }
 
 // createAndAddJWTPlugin handles the Kong JWT credential plugin generation and adding to k8s resources
-func createAndAddJWTPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation, targetRef string) *v1.KongPlugin {
+func createAndAddJWTPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation, targetRef string, authentication types.AuthConfiguration) *v1.KongPlugin {
+	headerNames := []string{}
+	queryParamNames := []string{}
+	if authentication.HeaderEnabled {
+		headerNames = append(headerNames, authentication.HeaderName)
+	}
+	if authentication.QueryParamEnable {
+		queryParamNames = append(queryParamNames, authentication.QueryParamName)
+	}
+
 	config := KongPluginConfig{
-		"run_on_preflight": true,
+		"run_on_preflight": false,
 		"key_claim_name":   "client_id",
 		"claims_to_verify": []string{
 			"exp",
 		},
-		"header_names": []string{
-			"authorization",
-		},
+		"header_names":    headerNames,
+		"uri_param_names": queryParamNames,
 	}
 	targetRef = k8sArtifact.APIUUID + "-" + targetRef
-	jwtPlugin := GenerateJWTPlugin(operation, targetRef, config, true)
+	jwtPlugin := GenerateKongPlugin(operation, kongJwtAuthPluginName, targetRef, config, authentication.Enabled)
 	k8sArtifact.KongPlugins[jwtPlugin.ObjectMeta.Name] = jwtPlugin
 	return jwtPlugin
+}
+
+// createAndAddAPIKeyPlugin handles the Kong API Key credential plugin generation and adding to k8s resources
+func createAndAddAPIKeyPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation, targetRef string, authentication types.AuthConfiguration) *v1.KongPlugin {
+	keyNames := []string{}
+	if authentication.HeaderName != "" {
+		keyNames = append(keyNames, authentication.HeaderName)
+	}
+	if authentication.QueryParamName != "" {
+		keyNames = append(keyNames, authentication.QueryParamName)
+	}
+
+	config := KongPluginConfig{
+		"run_on_preflight": false,
+		"key_names":        keyNames,
+		"key_in_header":    authentication.HeaderEnabled,
+		"key_in_query":     authentication.QueryParamEnable,
+	}
+	targetRef = k8sArtifact.APIUUID + "-" + targetRef
+	keyPlugin := GenerateKongPlugin(operation, kongKeyAuthPluginName, targetRef, config, authentication.Enabled)
+	k8sArtifact.KongPlugins[keyPlugin.ObjectMeta.Name] = keyPlugin
+	return keyPlugin
 }
 
 // updateHTTPRouteAnnotations updates the annotations of httproutes
@@ -407,4 +448,22 @@ func GenerateK8sSecret(name string, labels map[string]string, data map[string]st
 		StringData: data,
 	}
 	return &secret
+}
+
+// GenerateKongPlugin handles the Kong plugin generation
+func GenerateKongPlugin(operation *types.Operation, pluginName string, targetRef string, config KongPluginConfig, enabled bool) *v1.KongPlugin {
+	return &v1.KongPlugin{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "KongPlugin",
+			APIVersion: "configuration.konghq.com/v1",
+		},
+		PluginName: pluginName,
+		ObjectMeta: metav1.ObjectMeta{
+			Name: GeneratePluginCRName(operation, targetRef, pluginName),
+		},
+		Disabled: !enabled,
+		Config: apiextensionsv1.JSON{
+			Raw: GenerateJSON(config),
+		},
+	}
 }

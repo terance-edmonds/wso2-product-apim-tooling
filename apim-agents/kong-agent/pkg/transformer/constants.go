@@ -27,4 +27,11 @@ const (
 
 	// K8s resource names
 	k8sIngressClassName = "kong"
+
+	// kong plugin names
+	kongRateLimitingPluginName = "rate-limiting"
+	kongCorsPluginName         = "cors"
+	kongKeyAuthPluginName      = "key-auth"
+	kongJwtAuthPluginName      = "jwt"
+	kongACLPluginName          = "acl"
 )

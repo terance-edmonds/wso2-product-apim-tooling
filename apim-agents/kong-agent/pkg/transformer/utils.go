@@ -70,7 +70,7 @@ func GeneratePluginCRName(operation *types.Operation, targetRef string, pluginNa
 	}
 	serviceTargetHash := fmt.Sprintf("%x", sha1.Sum([]byte(pluginName+targetRef)))
 	concatenatedString = concatenatedString + "-" + serviceTargetHash
-	return "api-" + concatenatedString + "-" + targetRef
+	return "route-" + concatenatedString + "-" + targetRef
 }
 
 // GeneratePolicyCRName generates a reference name for a policy plugin.
@@ -91,8 +91,8 @@ func GenerateSecretName(applicationUUID string, apiUUID string, secretType strin
 }
 
 // GenerateACLGroupName generates a kong acl API group name
-func GenerateACLGroupName(apiUUID string, environment string) string {
-	return "api-" + apiUUID + "-" + environment
+func GenerateACLGroupName(apiName string, environment string) string {
+	return "api-" + generateSHA1Hash(apiName) + "-" + environment
 }
 
 // GenerateJSON converts go struct to json

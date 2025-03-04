@@ -37,6 +37,7 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 		return
 	}
 
+	logger.LoggerMessaging.Infof("Received Subscription Event: %+v", subscriptionEvent)
 	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
 		// create production consumer and acl credential
 		createSubscription(subscriptionEvent, c, conf, constants.PRODUCTION_TYPE)
@@ -61,7 +62,7 @@ func createSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 
 	// create and deploy kong acl secret CR
 	aclCredentialSecretConfig := map[string]string{
-		"group": transformer.GenerateACLGroupName(subscriptionEvent.APIUUID, environment),
+		"group": transformer.GenerateACLGroupName(subscriptionEvent.APIName, environment),
 	}
 	subscriptionIdentifier := subscriptionEvent.APIUUID + environment
 	aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, subscriptionIdentifier, "acl", aclCredentialSecretConfig)
@@ -71,7 +72,7 @@ func createSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 
 	// update consumer subscription limit plugin annotation
 	subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
-	logger.LoggerMessaging.Infof("Subscription Policy: %v", subscriptionPolicy)
+	logger.LoggerMessaging.Infof("Subscription Policy: %+v", subscriptionPolicy)
 	if subscriptionPolicy.Name != "" && subscriptionPolicy.Name != "Unlimited" {
 		rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, "rate-limiting", "subscription")
 		addAnnotations = append(addAnnotations, rateLimitCRName)

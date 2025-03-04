@@ -25,6 +25,7 @@ import (
 
 // K8sArtifacts k8s artifact representation of API
 type K8sArtifacts struct {
+	APIName     string
 	APIUUID     string
 	Namespace   string
 	KongPlugins map[string]*v1.KongPlugin

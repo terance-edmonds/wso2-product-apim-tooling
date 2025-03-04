@@ -18,19 +18,12 @@
 package discovery
 
 import (
-	"bytes"
 	"context"
-	"crypto/tls"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"net/http"
 	"sync"
 	"time"
 
-	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/tlsutils"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,14 +36,11 @@ import (
 
 // Define the resources to watch
 var (
-	configOnce   sync.Once
-	eventQueue   chan APICPEvent
-	APIMap       map[string]API // Maps apiUUID to latest API struct
-	host         string
-	port         uint16
-	apisRestPath string
-	skipSSL      bool
-	wg           sync.WaitGroup
+	configOnce sync.Once
+	eventQueue chan managementserver.APICPEvent
+	APIMap     map[string]managementserver.API // Maps apiUUID to latest API struct
+	APIHashMap map[string]string               // Maps apiUUID to api hash string
+	wg         sync.WaitGroup
 )
 
 // CRWatcher defines a watcher for Kubernetes Custom Resources with pluggable event handlers
@@ -138,13 +128,9 @@ func (cw *CRWatcher) watchResource(ctx context.Context, client dynamic.Interface
 
 func init() {
 	configOnce.Do(func() {
-		conf, _ := config.ReadConfigs()
-		APIMap = make(map[string]API)
-		eventQueue = make(chan APICPEvent, 100)
-		host = conf.ControlPlane.Host
-		port = conf.ControlPlane.RestPort
-		skipSSL = conf.ControlPlane.SkipSSLVerification
-		apisRestPath = fmt.Sprintf("https://%s:%d%s", host, port, conf.ControlPlane.APIsRestPath)
+		APIMap = make(map[string]managementserver.API)
+		APIHashMap = make(map[string]string)
+		eventQueue = make(chan managementserver.APICPEvent, 100)
 
 		wg.Add(1)
 		go sendData()
@@ -153,87 +139,40 @@ func init() {
 
 // sendData sends data as a POST request to the control plane host.
 func sendData() {
-	loggers.LoggerWatcher.Infof("A thread assigned to send API events to agent")
-	tr := &http.Transport{}
-	if !skipSSL {
-		_, _, truststoreLocation := tlsutils.GetKeyLocations()
-		caCertPool := tlsutils.GetTrustedCertPool(truststoreLocation)
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{RootCAs: caCertPool},
-		}
-	} else {
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
+	loggers.LoggerWatcher.Infof("A thread assigned to handle event")
 
-	// Configuring the http client
-	client := &http.Client{
-		Transport: tr,
-	}
 	defer wg.Done()
 
 	for event := range eventQueue {
 		loggers.LoggerWatcher.Infof("Sending api event to agent. Event: %+v", event)
-		jsonData, err := json.Marshal(event)
-		if err != nil {
-			loggers.LoggerWatcher.Errorf("Error marshalling data. Error %+v", err)
-			continue
-		}
-		for {
-			resp, err := client.Post(
-				apisRestPath,
-				applicationJSON,
-				bytes.NewBuffer(jsonData),
-			)
-			if err != nil {
-				loggers.LoggerWatcher.Errorf("Error sending data. Error: %+v, Retrying after %d seconds", err, retryInterval)
-				time.Sleep(time.Second * retryInterval)
-				continue
-			}
-			defer resp.Body.Close()
-			body, _ := ioutil.ReadAll(resp.Body)
-			if resp.StatusCode == http.StatusServiceUnavailable {
-				loggers.LoggerWatcher.Errorf("Error: Unexpected status code: %d, received message: %s, retrying after %d seconds", resp.StatusCode, string(body), retryInterval)
-				time.Sleep(time.Second * retryInterval)
-				continue
-			}
-			if event.Event == EventTypeDelete {
-				// If it’s a delete event that got propagated to CP, no further action needed
-				break
-			}
-			// Removed delete(apiHashMap, event.API.APIHash) since apiHashMap is no longer used
 
-			var responseMap map[string]interface{}
-			if err := json.Unmarshal([]byte(body), &responseMap); err != nil {
-				loggers.LoggerWatcher.Errorf("Could not decode response body as json. body: %+v", string(body))
-				break
+		for {
+			if event.Event == managementserver.DeleteEvent {
+				managementserver.HandleDeleteEvent(event)
+			} else {
+				id, revisionID, err := managementserver.HandleCreateOrUpdateEvent(event)
+				if err != nil {
+					loggers.LoggerWatcher.Errorf("Event create or update error : %+v", err)
+				} else if id == "" {
+					loggers.LoggerWatcher.Error("Id field not present in response")
+					id = "" // Default to empty string if not found
+				} else if revisionID == "" {
+					loggers.LoggerWatcher.Error("Revision field not present in response")
+					revisionID = ""
+				}
+				loggers.LoggerWatcher.Infof("Adding label update to API Labels: apiUUID: %s, revisionID: %s",
+					id, revisionID)
 			}
-			// Extract id and revisionID from response
-			id, ok := responseMap["id"].(string)
-			revisionID, revisionOk := responseMap["revisionID"].(string)
-			if !ok {
-				loggers.LoggerWatcher.Errorf("Id field not present in response body. encoded body: %+v", responseMap)
-				id = "" // Default to empty string if not found
-			}
-			if !revisionOk {
-				loggers.LoggerWatcher.Errorf("Revision field not present in response body. encoded body: %+v", responseMap)
-				revisionID = ""
-			}
-			loggers.LoggerWatcher.Infof("Adding label update to API %s/%s, Labels: apiUUID: %s, revisionID: %s, apiHash: %s",
-				event.CRNamespace, event.CRName, id, revisionID, event.API.APIHash)
 			break
 		}
 	}
 }
 
 // QueueEvent adds an event to the event queue
-func QueueEvent(eventType EventType, api API, crName, crNamespace string) {
-	event := APICPEvent{
-		Event:       eventType,
-		API:         api,
-		CRName:      crName,
-		CRNamespace: crNamespace,
+func QueueEvent(eventType managementserver.EventType, api managementserver.API, crName, crNamespace string) {
+	event := managementserver.APICPEvent{
+		Event: eventType,
+		API:   api,
 	}
 	select {
 	case eventQueue <- event:

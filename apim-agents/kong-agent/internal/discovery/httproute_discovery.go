@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ import (
 
 	discoverPkg "github.com/wso2/product-apim-tooling/apim-agent/pkg/discovery"
 	loggers "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 )
 
 // InitializeHTTPRoutesState fetches all existing HTTPRoutes and populates discoverPkg.APIMap
@@ -62,7 +64,7 @@ func InitializeHTTPRoutesState() {
 	defer apiMutex.Unlock()
 	for apiUUID, routes := range routesByUUID {
 		api := buildAPIFromHTTPRoutes(routes, apiUUID)
-		api.APIHash = computeAPIHash(api)
+		discoverPkg.APIHashMap[apiUUID] = computeAPIHash(api)
 
 		// Check revisionID consistency
 		revisionID := ""
@@ -118,21 +120,21 @@ func handleAddHttpRouteResource(u *unstructured.Unstructured) {
 
 	// Fetch all HTTPRoutes with this apiUUID and rebuild discoverPkg.API if first time or revisionID mismatch
 	httpRoutes := fetchAllHTTPRoutesWithAPIUUID(u.GetNamespace(), apiUUID)
-	loggers.LoggerWatcher.Infof("============httproute: %+v", httpRoutes)
 	api := buildAPIFromHTTPRoutes(httpRoutes, apiUUID)
 	newHash := computeAPIHash(api)
 	currentHash := ""
 	if apiExists {
-		currentHash = existingAPI.APIHash
+		currentHash = discoverPkg.APIHashMap[apiUUID]
 	}
 
 	// Only update if discoverPkg.API is new or changed
 	if !apiExists || currentHash != newHash {
 		revisionID := generateRevisionID()
 		api.RevisionID = revisionID
-		api.APIHash = newHash
+		discoverPkg.APIHashMap[apiUUID] = newHash
 		discoverPkg.APIMap[apiUUID] = api
-		discoverPkg.QueueEvent(discoverPkg.EventTypeCreate, api, u.GetName(), u.GetNamespace())
+
+		discoverPkg.QueueEvent(managementserver.CreateEvent, api, u.GetName(), u.GetNamespace())
 		// Update revisionID label on all related HTTPRoutes
 		for _, route := range httpRoutes {
 			updateHTTPRouteLabel(route, "revisionID", revisionID)
@@ -164,12 +166,13 @@ func handleUpdateHTTPRouteResource(_, newU *unstructured.Unstructured) {
 	// Update discoverPkg.API incrementally
 	updateAPIFromHTTPRoute(&api, newU)
 	newHash := computeAPIHash(api)
-	if api.APIHash != newHash {
+	apiHash := discoverPkg.APIHashMap[api.APIUUID]
+	if apiHash != newHash {
 		revisionID := generateRevisionID()
 		api.RevisionID = revisionID
-		api.APIHash = newHash
+		discoverPkg.APIHashMap[apiUUID] = newHash
 		discoverPkg.APIMap[apiUUID] = api
-		discoverPkg.QueueEvent(discoverPkg.EventTypeUpdate, api, newU.GetName(), newU.GetNamespace())
+		discoverPkg.QueueEvent(managementserver.CreateEvent, api, newU.GetName(), newU.GetNamespace())
 		updateHTTPRouteLabel(newU, "revisionID", revisionID)
 	} else {
 		loggers.LoggerWatcher.Infof("discoverPkg.API %s unchanged after updating %s/%s, skipping CP update", apiUUID, newU.GetNamespace(), newU.GetName())
@@ -194,7 +197,8 @@ func handleDeleteHttpRouteResource(u *unstructured.Unstructured) {
 	}
 
 	delete(discoverPkg.APIMap, apiUUID)
-	discoverPkg.QueueEvent(discoverPkg.EventTypeDelete, api, u.GetName(), u.GetNamespace())
+	discoverPkg.QueueEvent(managementserver.DeleteEvent, api, u.GetName(), u.GetNamespace())
+	loggers.LoggerWatcher.Warnf("discoverPkg.API %s deleted", apiUUID)
 }
 
 // fetchAllHTTPRoutesWithAPIUUID fetches all HTTPRoutes with a given apiUUID
@@ -214,13 +218,23 @@ func fetchAllHTTPRoutesWithAPIUUID(namespace, apiUUID string) []*unstructured.Un
 }
 
 // buildAPIFromHTTPRoutes constructs an discoverPkg.API from a list of HTTPRoutes
-func buildAPIFromHTTPRoutes(httpRoutes []*unstructured.Unstructured, apiUUID string) discoverPkg.API {
-	api := discoverPkg.API{
+func buildAPIFromHTTPRoutes(httpRoutes []*unstructured.Unstructured, apiUUID string) managementserver.API {
+	api := managementserver.API{
 		APIUUID:          apiUUID,
 		APIName:          fmt.Sprintf("api-%s", apiUUID),
-		APIVersion:       "v1",
+		APIVersion:       "",
 		IsDefaultVersion: true,
-		APIType:          "REST",
+		APIType:          "rest",
+	}
+
+	apiDef, err := discoverPkg.GenerateOpenAPIDefinition(httpRoutes, apiUUID)
+	if err == nil {
+		data, err := json.Marshal(apiDef)
+		if err != nil {
+			loggers.LoggerWatcher.Error("Failed to convert api definition to bytes")
+		} else {
+			api.Definition = string(data)
+		}
 	}
 
 	for _, u := range httpRoutes {
@@ -230,8 +244,7 @@ func buildAPIFromHTTPRoutes(httpRoutes []*unstructured.Unstructured, apiUUID str
 }
 
 // updateAPIFromHTTPRoute merges HTTPRoute data into an existing discoverPkg.API
-func updateAPIFromHTTPRoute(api *discoverPkg.API, u *unstructured.Unstructured) {
-	loggers.LoggerWatcher.Infof("============httprouteUpdate: %+v", u)
+func updateAPIFromHTTPRoute(api *managementserver.API, u *unstructured.Unstructured) {
 	// Set environment (default to "production" if not found)
 	env, found := u.GetLabels()["environment"]
 	if !found {
@@ -325,8 +338,8 @@ func fetchKongPlugin(namespace, name string) *unstructured.Unstructured {
 }
 
 // extractOperations pulls operations from HTTPRoute rules
-func extractOperations(httpRoute *unstructured.Unstructured) []discoverPkg.Operation {
-	var operations []discoverPkg.Operation
+func extractOperations(httpRoute *unstructured.Unstructured) []managementserver.OperationFromDP {
+	var operations []managementserver.OperationFromDP
 
 	// Access spec.rules from unstructured data
 	rules, found, err := unstructured.NestedSlice(httpRoute.Object, "spec", "rules")
@@ -369,7 +382,7 @@ func extractOperations(httpRoute *unstructured.Unstructured) []discoverPkg.Opera
 				verb = method
 			}
 
-			operations = append(operations, discoverPkg.Operation{
+			operations = append(operations, managementserver.OperationFromDP{
 				Path:   path,
 				Verb:   verb,
 				Scopes: []string{},
@@ -380,7 +393,7 @@ func extractOperations(httpRoute *unstructured.Unstructured) []discoverPkg.Opera
 }
 
 // operationExists checks if an operation is already in the list
-func operationExists(ops []discoverPkg.Operation, newOp discoverPkg.Operation) bool {
+func operationExists(ops []managementserver.OperationFromDP, newOp managementserver.OperationFromDP) bool {
 	for _, op := range ops {
 		if op.Path == newOp.Path && op.Verb == newOp.Verb {
 			return true
@@ -390,7 +403,7 @@ func operationExists(ops []discoverPkg.Operation, newOp discoverPkg.Operation) b
 }
 
 // extractBasePath finds a common prefix among all operation paths
-func extractBasePath(operations []discoverPkg.Operation) string {
+func extractBasePath(operations []managementserver.OperationFromDP) string {
 	var paths []string
 	for _, op := range operations {
 		paths = append(paths, op.Path)
@@ -431,8 +444,8 @@ func findCommonPrefix(paths []string) string {
 }
 
 // extractCORSPolicyFromKongPlugin pulls CORS details from a KongPlugin
-func extractCORSPolicyFromKongPlugin(kongPlugin *unstructured.Unstructured) *discoverPkg.CORSPolicy {
-	cors := &discoverPkg.CORSPolicy{
+func extractCORSPolicyFromKongPlugin(kongPlugin *unstructured.Unstructured) *managementserver.CORSPolicy {
+	cors := &managementserver.CORSPolicy{
 		AccessControlAllowCredentials: false,
 		AccessControlAllowOrigins:     []string{},
 		AccessControlAllowMethods:     []string{},
@@ -471,8 +484,8 @@ func extractCORSPolicyFromKongPlugin(kongPlugin *unstructured.Unstructured) *dis
 }
 
 // extractRateLimitFromKongPlugin pulls rate limit details from a KongPlugin
-func extractRateLimitFromKongPlugin(kongPlugin *unstructured.Unstructured) *discoverPkg.AIRL {
-	rl := &discoverPkg.AIRL{
+func extractRateLimitFromKongPlugin(kongPlugin *unstructured.Unstructured) *managementserver.AIRL {
+	rl := &managementserver.AIRL{
 		TimeUnit: "min", // Default to "min" as per allowedTimeUnits
 	}
 	if config, found, _ := unstructured.NestedMap(kongPlugin.Object, "config"); found {
@@ -489,7 +502,7 @@ func extractRateLimitFromKongPlugin(kongPlugin *unstructured.Unstructured) *disc
 }
 
 // computeAPIHash generates a hash of the discoverPkg.API struct for comparison
-func computeAPIHash(api discoverPkg.API) string {
+func computeAPIHash(api managementserver.API) string {
 	data := fmt.Sprintf("%v%v%v%v%v", api.Operations, api.CORSPolicy, api.ProdAIRL, api.SandAIRL, api.Environment)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
