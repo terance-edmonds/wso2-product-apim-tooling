@@ -49,6 +49,13 @@ func InitializeHTTPRoutesState() {
 	routesByUUID := make(map[string][]*unstructured.Unstructured)
 	for i := range list.Items {
 		route := &list.Items[i]
+
+		// If to hide the API in CP
+		showInCP, found := route.GetLabels()["showInCP"]
+		if found && showInCP == "false" {
+			continue
+		}
+
 		apiUUID, found := route.GetLabels()["apiUUID"]
 		if !found {
 			// Generate apiUUID for routes without it
@@ -100,6 +107,12 @@ func InitializeHTTPRoutesState() {
 
 // handleAddHttpRouteResource handles the addition of an HTTPRoute
 func handleAddHttpRouteResource(u *unstructured.Unstructured) {
+	// If to hide the API in CP
+	showInCP, found := u.GetLabels()["showInCP"]
+	if found && showInCP == "false" {
+		return
+	}
+
 	apiUUID, found := u.GetLabels()["apiUUID"]
 	if !found {
 		apiUUID = uuid.New().String()
@@ -146,6 +159,12 @@ func handleAddHttpRouteResource(u *unstructured.Unstructured) {
 
 // handleUpdateHTTPRouteResource handles the update of an HTTPRoute
 func handleUpdateHTTPRouteResource(_, newU *unstructured.Unstructured) {
+	// If to hide the API in CP
+	showInCP, found := newU.GetLabels()["showInCP"]
+	if found && showInCP == "false" {
+		return
+	}
+
 	apiUUID, found := newU.GetLabels()["apiUUID"]
 	if !found {
 		loggers.LoggerWatcher.Warnf("HTTPRoute %s/%s has no apiUUID label, treating as new", newU.GetNamespace(), newU.GetName())
@@ -212,6 +231,12 @@ func fetchAllHTTPRoutesWithAPIUUID(namespace, apiUUID string) []*unstructured.Un
 	}
 	items := make([]*unstructured.Unstructured, len(list.Items))
 	for i := range list.Items {
+		// If to hide the API in CP
+		showInCP, found := list.Items[i].GetLabels()["showInCP"]
+		if found && showInCP == "false" {
+			continue
+		}
+
 		items[i] = &list.Items[i]
 	}
 	return items
@@ -245,6 +270,18 @@ func buildAPIFromHTTPRoutes(httpRoutes []*unstructured.Unstructured, apiUUID str
 
 // updateAPIFromHTTPRoute merges HTTPRoute data into an existing discoverPkg.API
 func updateAPIFromHTTPRoute(api *managementserver.API, u *unstructured.Unstructured) {
+	// If to hide the API in CP
+	showInCP, found := u.GetLabels()["showInCP"]
+	if found && showInCP == "false" {
+		return
+	}
+
+	// Set display name if exists
+	displayName, found := u.GetLabels()["displayName"]
+	if found && displayName != "" {
+		api.APIName = displayName
+	}
+
 	// Set environment (default to "production" if not found)
 	env, found := u.GetLabels()["environment"]
 	if !found {
