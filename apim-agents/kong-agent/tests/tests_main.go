@@ -21,8 +21,8 @@ import (
 	"os"
 
 	"github.com/cucumber/godog"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/pkg/utils"
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/steps"
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/utils"
 )
 
 func main() {

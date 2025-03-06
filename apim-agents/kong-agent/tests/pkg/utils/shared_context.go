@@ -20,13 +20,11 @@ package utils
 import (
 	"net/http"
 	"sync"
-
-	httpclient "github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/utils/http_client"
 )
 
 // SharedContext holds the state for test scenarios.
 type SharedContext struct {
-	httpClient            *httpclient.SimpleHTTPClient
+	httpClient            *SimpleHTTPClient
 	accessToken           string
 	response              *http.Response
 	responseBody          string
@@ -61,7 +59,7 @@ type SharedContext struct {
 
 // NewSharedContext creates a new instance of SharedContext with initialized maps.
 func NewSharedContext() *SharedContext {
-	client := httpclient.NewSimpleHTTPClient()
+	client := NewSimpleHTTPClient()
 	return &SharedContext{
 		httpClient: client,
 		valueStore: make(map[string]interface{}),
@@ -70,11 +68,11 @@ func NewSharedContext() *SharedContext {
 }
 
 // GetHTTPClient lazily initializes and returns the HTTP client.
-func (ctx *SharedContext) GetHTTPClient() *httpclient.SimpleHTTPClient {
+func (ctx *SharedContext) GetHTTPClient() *SimpleHTTPClient {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
 	if ctx.httpClient == nil {
-		ctx.httpClient = httpclient.NewSimpleHTTPClient()
+		ctx.httpClient = NewSimpleHTTPClient()
 	}
 	return ctx.httpClient
 }

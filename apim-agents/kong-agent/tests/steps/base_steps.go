@@ -29,8 +29,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cucumber/godog"
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/utils"
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/utils/constants"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/pkg/constants"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/pkg/utils"
 )
 
 func BaseSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
@@ -301,7 +301,7 @@ func sendHttpRequest(ctx *utils.SharedContext, httpMethod, url, body string) err
 
 	case strings.ToLower(constants.CurlOption.HttpMethodOptions):
 		// OPTIONS request
-		response, err := httpclient.DoOptions(url, ctx.GetHeaders())
+		response, err := httpclient.DoOptions(url, ctx.GetHeaders(), "", "")
 		if err != nil {
 			return err
 		}

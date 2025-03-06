@@ -27,11 +27,9 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/utils"
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/utils/constants"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/pkg/constants"
+	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/pkg/utils"
 )
-
-var OASURL string
 
 // APIDeploymentSteps registers all step definitions for API deployment scenarios.
 func APIDeploymentSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {

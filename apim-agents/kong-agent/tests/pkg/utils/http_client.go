@@ -15,7 +15,7 @@
  *
  */
 
-package httpclient
+package utils
 
 import (
 	"bytes"
@@ -28,8 +28,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/utils"
 )
 
 // SimpleHTTPClient is a wrapper around Go's standard HTTP client
@@ -240,7 +238,7 @@ func (client *SimpleHTTPClient) ExecuteLastRequestForEventualConsistentResponse(
 			return response, nil
 		}
 
-		if utils.ContainsInteger(nonAcceptableCodes, response.StatusCode) {
+		if ContainsInteger(nonAcceptableCodes, response.StatusCode) {
 			return response, nil
 		}
 	}
