@@ -20,9 +20,8 @@ package constants
 // Constants defines global constants used across the test suite.
 const (
 	// Default hosts and endpoints
-	DefaultIDPHost             = "idp.am.wso2.com"
 	DefaultAPIHost             = "api.am.wso2.com"
-	DefaultGWPort              = "9095"
+	DefaultGWPort              = "8000"
 	DefaultTokenEP             = "oauth2/token"
 	DefaultAPIConfigurator     = "api/configurator/1.2.0/"
 	DefaultAPIDeployer         = "api/deployer/1.2.0/"

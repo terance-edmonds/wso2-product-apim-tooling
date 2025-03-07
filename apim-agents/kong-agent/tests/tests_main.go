@@ -29,7 +29,7 @@ func main() {
 	ctx := utils.NewSharedContext()
 	opts := godog.Options{
 		Format: "progress",
-		Paths:  []string{"features"},
+		Paths:  []string{"./tests/features"},
 	}
 
 	status := godog.TestSuite{

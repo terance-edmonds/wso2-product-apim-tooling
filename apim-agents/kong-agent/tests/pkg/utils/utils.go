@@ -45,12 +45,6 @@ func GetK8ResourceGeneratorURL() string {
 		constants.DefaultAPIHost, constants.DefaultGWPort, constants.DefaultAPIConfigurator)
 }
 
-// GetTokenEndpointURL returns the token endpoint URL.
-func GetTokenEndpointURL() string {
-	return fmt.Sprintf("https://%s:%s/%s",
-		constants.DefaultIDPHost, constants.DefaultGWPort, constants.DefaultTokenEP)
-}
-
 // GetAPIDeployerURL returns the API deployer URL.
 func GetAPIDeployerURL() string {
 	return fmt.Sprintf("https://%s:%s/%sapis/deploy",
@@ -326,18 +320,60 @@ func ExtractApplicationUUID(payload string) (string, error) {
 	return result.String(), nil
 }
 
+// // ExtractAPIUUID extracts the "id" from the first item in the "list" array if count is 1.
+// func ExtractAPIUUID(payload string) (string, error) {
+// 	count := gjson.Get(payload, "count").Int()
+// 	if count != 1 {
+// 		return "", nil // Return empty string if count != 1, as per Java null
+// 	}
+
+// 	result := gjson.Get(payload, "list.0.id")
+// 	if !result.Exists() {
+// 		return "", fmt.Errorf("missing 'list[0].id' in JSON payload")
+// 	}
+// 	return result.String(), nil
+// }
+
 // ExtractAPIUUID extracts the "id" from the first item in the "list" array if count is 1.
 func ExtractAPIUUID(payload string) (string, error) {
 	count := gjson.Get(payload, "count").Int()
-	if count != 1 {
-		return "", nil // Return empty string if count != 1, as per Java null
+	if count < 1 {
+		return "", fmt.Errorf("no items found in the list")
 	}
 
-	result := gjson.Get(payload, "list.0.id")
-	if !result.Exists() {
-		return "", fmt.Errorf("missing 'list[0].id' in JSON payload")
+	// If count is 1, return the first item's ID
+	if count == 1 {
+		result := gjson.Get(payload, "list.0.id")
+		if !result.Exists() {
+			return "", fmt.Errorf("missing 'list[0].id' in JSON payload")
+		}
+		return result.String(), nil
 	}
-	return result.String(), nil
+
+	// If count > 1, filter the list by "type": "API"
+	filtered := gjson.Get(payload, "list").Array()
+	var apiItems []gjson.Result
+
+	for _, item := range filtered {
+		if item.Get("type").String() == "API" {
+			apiItems = append(apiItems, item)
+		}
+	}
+
+	// If no API items found or more than one exists, return an error
+	if len(apiItems) == 0 {
+		return "", fmt.Errorf("no items with type 'API' found in the list")
+	} else if len(apiItems) > 1 {
+		return "", fmt.Errorf("multiple items with type 'API' found in the list")
+	}
+
+	// Return the id of the first (and only) filtered API item
+	apiID := apiItems[0].Get("id")
+	if !apiID.Exists() {
+		return "", fmt.Errorf("missing 'id' in the filtered API item")
+	}
+
+	return apiID.String(), nil
 }
 
 // AddFileToMultipart function to add a file to the multipart form data
@@ -385,4 +421,15 @@ func ContainsInteger(slice []int, item int) bool {
 		}
 	}
 	return false
+}
+
+// OpenFile opens a file given its file path and returns the *os.File
+func OpenFile(filePath string) *os.File {
+	// Open the file in read-only mode
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil
+	}
+
+	return file
 }

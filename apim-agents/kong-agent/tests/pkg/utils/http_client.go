@@ -20,6 +20,7 @@ package utils
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -40,8 +41,14 @@ type SimpleHTTPClient struct {
 
 // NewSimpleHTTPClient creates a simple http client
 func NewSimpleHTTPClient() *SimpleHTTPClient {
+	transport := &http.Transport{
+		// Disable certificate verification (insecure)
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout:   30 * time.Second,
+		Transport: transport,
 	}
 
 	return &SimpleHTTPClient{
@@ -172,38 +179,97 @@ func (client *SimpleHTTPClient) DoPut(url string, headers map[string]string, pay
 	return client.Client.Do(req)
 }
 
-// DoPostWithMultipart sends an HTTP POST request with multipart form data
-func (client *SimpleHTTPClient) DoPostWithMultipart(url string, headers map[string]string, filePath string) (*http.Response, error) {
+// DoPostWithMultipart performs a POST request with a multipart body
+func (client *SimpleHTTPClient) DoPostWithMultipart(url string, body io.Reader) (*http.Response, error) {
+	return client.doPostWithMultipartWithHeaders(url, body, map[string]string{})
+}
+
+// doPostWithMultipartWithHeaders performs a POST request with a multipart body and custom headers
+func (client *SimpleHTTPClient) doPostWithMultipartWithHeaders(url string, body io.Reader, header map[string]string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, value := range header {
+		req.Header.Set(key, value)
+	}
+
+	client.lastRequest = req
+	return client.Client.Do(req)
+}
+
+// MultipartFilePart structure
+type MultipartFilePart struct {
+	Name string
+	File *os.File
+	Text string
+}
+
+// DoPostWithMultipartFiles performs a POST request with multiple file parts and custom headers
+func (client *SimpleHTTPClient) DoPostWithMultipartFiles(url string, fileParts []MultipartFilePart, header map[string]string) (*http.Response, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+	for _, filePart := range fileParts {
+		if filePart.File != nil {
+			part, err := writer.CreateFormFile(filePart.Name, filePart.File.Name())
+			if err != nil {
+				return nil, err
+			}
+			_, err = io.Copy(part, filePart.File)
+			if err != nil {
+				return nil, err
+			}
 
-	part, err := writer.CreateFormFile("file", file.Name())
-	if err != nil {
-		return nil, err
+		} else if filePart.Text != "" {
+			err := writer.WriteField(filePart.Name, filePart.Text)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
-
-	_, err = io.Copy(part, file)
-	if err != nil {
-		return nil, err
-	}
-
-	err = writer.Close()
-	if err != nil {
-		return nil, err
-	}
+	writer.Close()
 
 	req, err := http.NewRequest(http.MethodPost, url, body)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	SetHeaders(headers, req)
+	for key, value := range header {
+		req.Header.Set(key, value)
+	}
+
+	client.lastRequest = req
+	return client.Client.Do(req)
+}
+
+// DoPutWithMultipart performs a PUT request with a single file and custom headers
+func (client *SimpleHTTPClient) DoPutWithMultipart(url string, file *os.File, header map[string]string) (*http.Response, error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	part, err := writer.CreateFormFile("file", file.Name())
+	if err != nil {
+		return nil, err
+	}
+	_, err = io.Copy(part, file)
+	if err != nil {
+		return nil, err
+	}
+	writer.Close()
+
+	req, err := http.NewRequest(http.MethodPut, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	for key, value := range header {
+		req.Header.Set(key, value)
+	}
+
 	client.lastRequest = req
 	return client.Client.Do(req)
 }
@@ -242,5 +308,5 @@ func (client *SimpleHTTPClient) ExecuteLastRequestForEventualConsistentResponse(
 			return response, nil
 		}
 	}
-	return nil, fmt.Errorf("Could not receive expected response within time")
+	return nil, fmt.Errorf("could not receive expected response within time")
 }

@@ -47,6 +47,9 @@ func BaseSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
 	s.Step(`^I send "([^"]*)" request to "([^"]*)" with body "([^"]*)"$`, func(method, url, body string) error {
 		return sendHttpRequest(ctx, method, url, body)
 	})
+	s.Step(`^I eventually receive (\d+) response code, not accepting$`, func(code int, table *godog.Table) error {
+		return iHaveEventualSuccess(ctx, code, table)
+	})
 }
 
 // theSystemIsReady checks if the system is ready to proceed with tests.
@@ -217,7 +220,7 @@ func iHaveValidDevportalAccessToken(ctx *utils.SharedContext) error {
 // setHeaders sets headers from a godog.Table.
 func setHeaders(ctx *utils.SharedContext, table *godog.Table) error {
 	// Iterate over each row in the table (ignoring the header row)
-	for _, row := range table.Rows[1:] {
+	for _, row := range table.Rows[0:] {
 		// Extract the key and value from the columns in the row
 		key := row.Cells[0].Value
 		value := row.Cells[1].Value
@@ -225,7 +228,6 @@ func setHeaders(ctx *utils.SharedContext, table *godog.Table) error {
 		// Resolve variables in both key and value
 		key = utils.ResolveVariables(key, ctx.GetValueStore())
 		value = utils.ResolveVariables(value, ctx.GetValueStore())
-
 		// Add the resolved key-value pair to the context headers
 		ctx.AddHeader(key, value)
 	}

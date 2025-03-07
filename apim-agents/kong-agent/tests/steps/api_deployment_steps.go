@@ -18,11 +18,9 @@
 package steps
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"mime/multipart"
-	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -33,8 +31,6 @@ import (
 
 // APIDeploymentSteps registers all step definitions for API deployment scenarios.
 func APIDeploymentSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
-
-	// // Scenario 1: API creation and subscription steps
 	s.Step(`^I use the Payload file "([^"]*)"$`, func(file string) error { return iUseThePayloadFile(ctx, file) })
 	s.Step(`^I use the OAS URL "([^"]*)"$`, func(url string) error { return iUseTheOASURL(ctx, url) })
 	s.Step(`^make the import API Creation request using OAS "([^"]*)"$`, func(method string) error {
@@ -57,25 +53,20 @@ func APIDeploymentSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
 		return makeAccessTokenGenerationRequest(ctx, env)
 	})
 
-	// s.Step(`^I eventually receive (\d+) response code, not accepting$`, func(code int, table *godog.Table) error {
-	// 	return iEventuallyReceiveResponseCodeNotAccepting(ctx, code, table)
-	// })
-
-	// // Scenario 2: API undeployment steps
-	// s.Step(`^I delete the application "([^"]*)" from devportal$`, func(name string) error {
-	// 	return iDeleteTheApplicationFromDevportal(ctx, name)
-	// })
-	// s.Step(`^I find the apiUUID of the API created with the name "([^"]*)"$`, func(name string) error {
-	// 	return iFindTheApiUUIDOfTheAPICreatedWithTheName(ctx, name)
-	// })
-	// s.Step(`^I undeploy the selected API$`, func() error { return iUndeployTheSelectedAPI(ctx) })
+	s.Step(`^I delete the application "([^"]*)" from devportal$`, func(name string) error {
+		return makeApplicationDeletionRequest(ctx, name)
+	})
+	s.Step(`^I find the apiUUID of the API created with the name "([^"]*)"$`, func(name string) error {
+		return findAPIUUIDUsingName(ctx, name)
+	})
+	s.Step(`^I undeploy the selected API$`, func() error { return iUndeployTheAPI(ctx) })
 }
 
 // iHaveTheAPIPayloadFile loads the API payload file by its name.
 func iUseThePayloadFile(ctx *utils.SharedContext, payloadFileName string) error {
 	// Get the file path using the payload file name
-	payloadFilePath := fmt.Sprintf("resources/%s", payloadFileName) // Adjust this to your file's actual location
-	_, err := os.Stat(payloadFilePath)                              // Check if the file exists
+	payloadFilePath := fmt.Sprintf("./tests/%s", payloadFileName)
+	_, err := os.Stat(payloadFilePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("file not found: %s", payloadFilePath)
@@ -97,85 +88,64 @@ func iUseTheOASURL(ctx *utils.SharedContext, url string) error {
 
 // makeImportAPICreationRequest handles API import request based on definition type (URL or File)
 func makeImportAPICreationRequest(ctx *utils.SharedContext, definitionType string) error {
-	var oasURL string
-	var payloadFilePath string
-
-	if url, ok := ctx.GetStoreValue("OASURL").(string); ok {
-		oasURL = url
-	}
-	if filePath, ok := ctx.GetStoreValue("payloadFile").(string); ok {
-		payloadFilePath = filePath
-	}
-
-	var requestBody bytes.Buffer
-	writer := multipart.NewWriter(&requestBody)
-
-	// If definition type is URL
-	if definitionType == "URL" {
-		fmt.Println("OAS URL: ", oasURL)
-		_ = writer.WriteField("url", oasURL)
-		utils.AddFileToMultipart(writer, "additionalProperties", payloadFilePath)
-	}
-
-	// If definition type is File
-	if definitionType == "File" {
-		fmt.Println("OAS File: ", payloadFilePath)
-		utils.AddFileToMultipart(writer, "file", payloadFilePath)
-		utils.AddFileToMultipart(writer, "additionalProperties", payloadFilePath)
-	}
-
-	// Close the multipart writer
-	err := writer.Close()
-	if err != nil {
-		return fmt.Errorf("error closing multipart writer: %v", err)
-	}
-
-	// Prepare headers
+	httpclient := ctx.GetHTTPClient()
 	headers := map[string]string{
-		"Authorization": "Bearer " + ctx.GetPublisherAccessToken(),
-		"Host":          constants.DefaultAPIMAPIHost,
+		constants.RequestHeaders.Authorization: "Bearer " + ctx.GetPublisherAccessToken(),
+		constants.RequestHeaders.Host:          constants.DefaultAPIMAPIHost,
 	}
 
-	// Send the HTTP POST request
-	req, err := http.NewRequest("POST", utils.GetImportAPIURL(), &requestBody)
-	if err != nil {
-		return fmt.Errorf("error creating HTTP request: %v", err)
+	// Retrieve necessary values from context store
+	payloadFilePath := ctx.GetStoreValue("payloadFile").(string)
+	if payloadFilePath == "" {
+		return fmt.Errorf("payloadFile not found in context store")
 	}
 
-	// Set the headers
-	for key, value := range headers {
-		req.Header.Set(key, value)
+	var fileParts []utils.MultipartFilePart
+	if definitionType == "URL" {
+		oasURL := ctx.GetStoreValue("OASURL").(string)
+		if oasURL == "" {
+			return fmt.Errorf("OASURL not found in context store")
+		}
+		fmt.Println("OAS URL:", oasURL)
+		fileParts = []utils.MultipartFilePart{
+			{Name: "url", File: nil, Text: oasURL}, // URL as text field
+			{Name: "additionalProperties", File: utils.OpenFile(payloadFilePath)},
+		}
+	} else if definitionType == "File" {
+		definitionFilePath := ctx.GetStoreValue("definitionFile").(string)
+		if definitionFilePath == "" {
+			return fmt.Errorf("definitionFile not found in context store")
+		}
+		fmt.Println("OAS File:", definitionFilePath)
+		fileParts = []utils.MultipartFilePart{
+			{Name: "file", File: utils.OpenFile(definitionFilePath)},
+			{Name: "additionalProperties", File: utils.OpenFile(payloadFilePath)},
+		}
+	} else {
+		return fmt.Errorf("invalid definition type: %s", definitionType)
 	}
 
-	// Set the content type for the multipart request
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	// Make the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Send HTTP request
+	resp, err := httpclient.DoPostWithMultipartFiles(utils.GetImportAPIURL(), fileParts, headers)
 	if err != nil {
 		return fmt.Errorf("error sending request: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// Store the response and extract relevant data
 	ctx.SetResponse(resp)
-	body, err := io.ReadAll(resp.Body)
+	body, err := utils.ResponseEntityBodyToString(resp)
 	if err != nil {
-		return fmt.Errorf("error reading response body: %v", err)
+		return err
+	}
+	ctx.SetResponseBody(body)
+
+	apiUUID, err := utils.ExtractID(body)
+	if err != nil {
+		return fmt.Errorf("error extracting API UUID from response body: %v", err)
 	}
 
-	// Store response body and extract API UUID
-	ctx.SetResponseBody(string(body))
-	apiUUID, err := utils.ExtractID(string(body))
-	if err != nil {
-		return fmt.Errorf("error extracting api UUID from body: %v", err)
-	}
 	ctx.SetApiUUID(apiUUID)
-
-	// Simulate a sleep like in the Java version
-	time.Sleep(3 * time.Second)
-
+	time.Sleep(3 * time.Second) // Simulating Java sleep
 	return nil
 }
 
@@ -213,7 +183,6 @@ func makeAPIRevisionDeploymentRequest(ctx *utils.SharedContext) error {
 	// Sleep for 3 seconds to simulate the delay
 	time.Sleep(3 * time.Second)
 
-	// Prepare payload for deployment
 	payload2 := "[{\"name\": \"Default\", \"vhost\": \"default.gw.wso2.com\", \"displayOnDevportal\": true}]"
 
 	// Make the API revision deployment request
@@ -223,7 +192,6 @@ func makeAPIRevisionDeploymentRequest(ctx *utils.SharedContext) error {
 		return fmt.Errorf("failed to deploy API revision: %v", err)
 	}
 
-	// Log the response and set it in the context
 	fmt.Printf("Response: %+v", response2)
 	ctx.SetResponse(response2)
 
@@ -251,7 +219,6 @@ func makeChangeLifecycleRequest(ctx *utils.SharedContext) error {
 		return err
 	}
 
-	// Store the response
 	ctx.SetResponse(resp)
 
 	// Wait for 3 seconds (simulating the sleep in the Java code)
@@ -598,6 +565,130 @@ func makeAccessTokenGenerationRequest(ctx *utils.SharedContext, keyType string) 
 	fmt.Printf("Access Token: %s", ctx.GetApiAccessToken())
 
 	// Wait for the response to settle
+	time.Sleep(3 * time.Second)
+
+	return nil
+}
+
+// makeApplicationDeletionRequest searches for an application by name and deletes it.
+func makeApplicationDeletionRequest(ctx *utils.SharedContext, applicationName string) error {
+	fmt.Println("Fetching the applications")
+
+	httpclient := ctx.GetHTTPClient()
+	headers := map[string]string{
+		constants.RequestHeaders.Authorization: "Bearer " + ctx.GetDevportalAccessToken(),
+		constants.RequestHeaders.Host:          constants.DefaultAPIMAPIHost,
+	}
+
+	// Construct the query parameters
+	queryParams := url.Values{}
+	queryParams.Add("query", applicationName)
+
+	// Build the search URL
+	appSearchURL := fmt.Sprintf("%s?%s", utils.GetApplicationCreateURL(), queryParams.Encode())
+
+	// Perform GET request to search for the application
+	appSearchResponse, err := httpclient.DoGet(appSearchURL, headers)
+	if err != nil {
+		return err
+	}
+
+	ctx.SetResponse(appSearchResponse)
+	searchResp, err := utils.ResponseEntityBodyToString(appSearchResponse)
+	if err != nil {
+		return nil
+	}
+	ctx.SetResponseBody(searchResp)
+
+	// Extract application UUID
+	applicationUUID, err := utils.ExtractApplicationUUID(ctx.GetResponseBody())
+	if applicationUUID == "" || err != nil {
+		return fmt.Errorf("failed to extract application UUID")
+	}
+
+	// Perform DELETE request to delete the application
+	deleteURL := fmt.Sprintf("%s/%s", utils.GetApplicationCreateURL(), applicationUUID)
+	deleteResponse, err := httpclient.DoDelete(deleteURL, headers)
+	if err != nil {
+		return err
+	}
+
+	ctx.SetResponse(deleteResponse)
+	delResp, err := utils.ResponseEntityBodyToString(deleteResponse)
+	if err != nil {
+		return nil
+	}
+	ctx.SetResponseBody(delResp)
+
+	// Wait for 3 seconds
+	time.Sleep(3 * time.Second)
+
+	return nil
+}
+
+// findAPIUUIDUsingName searches for an API by name and retrieves its UUID.
+func findAPIUUIDUsingName(ctx *utils.SharedContext, apiName string) error {
+	fmt.Println("Fetching the APIs")
+	httpclient := ctx.GetHTTPClient()
+
+	headers := map[string]string{
+		constants.RequestHeaders.Authorization: "Bearer " + ctx.GetPublisherAccessToken(),
+		constants.RequestHeaders.Host:          constants.DefaultAPIMAPIHost,
+	}
+
+	// Perform GET request to search for the API
+	apiSearchURL := utils.GetAPISearchEndpoint(apiName)
+	apiSearchResponse, err := httpclient.DoGet(apiSearchURL, headers)
+	if err != nil {
+		return err
+	}
+
+	ctx.SetResponse(apiSearchResponse)
+	searchResp, err := utils.ResponseEntityBodyToString(apiSearchResponse)
+	if err != nil {
+		return err
+	}
+	ctx.SetResponseBody(searchResp)
+
+	// Extract API UUID
+	apiUUID, err := utils.ExtractAPIUUID(ctx.GetResponseBody())
+	if apiUUID == "" || err != nil {
+		return fmt.Errorf("failed to extract API UUID")
+	}
+
+	ctx.SetApiUUID(apiUUID)
+
+	// Wait for 3 seconds
+	time.Sleep(3 * time.Second)
+
+	return nil
+}
+
+// iUndeployTheAPI deletes the API using its UUID.
+func iUndeployTheAPI(ctx *utils.SharedContext) error {
+	fmt.Printf("API UUID to be deleted: %s\n", ctx.GetApiUUID())
+	httpclient := ctx.GetHTTPClient()
+
+	headers := map[string]string{
+		constants.RequestHeaders.Authorization: "Bearer " + ctx.GetPublisherAccessToken(),
+		constants.RequestHeaders.Host:          constants.DefaultAPIMAPIHost,
+	}
+
+	// Perform DELETE request to undeploy the API
+	apiUndeployURL := utils.GetAPIUnDeployerURL(ctx.GetApiUUID())
+	response, err := httpclient.DoDelete(apiUndeployURL, headers)
+	if err != nil {
+		return err
+	}
+
+	ctx.SetResponse(response)
+	resp, err := utils.ResponseEntityBodyToString(response)
+	if err != nil {
+		return err
+	}
+	ctx.SetResponseBody(resp)
+
+	// Wait for 3 seconds
 	time.Sleep(3 * time.Second)
 
 	return nil
