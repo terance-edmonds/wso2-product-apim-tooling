@@ -342,7 +342,10 @@ func createAndAddJWTPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation
 	queryParamNames := []string{}
 	if authentication.HeaderEnabled {
 		headerNames = append(headerNames, authentication.HeaderName)
+	} else if authentication.Enabled {
+		headerNames = append(headerNames, "Authorization")
 	}
+
 	if authentication.QueryParamEnable {
 		queryParamNames = append(queryParamNames, authentication.QueryParamName)
 	}
