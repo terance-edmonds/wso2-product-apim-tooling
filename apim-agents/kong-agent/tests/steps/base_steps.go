@@ -326,6 +326,7 @@ func eventualSuccess(ctx *utils.SharedContext, statusCode int, nonAcceptableCode
 
 	// If the status code is different, attempt to get a consistent response
 	response, err := httpclient.ExecuteLastRequestForEventualConsistentResponse(statusCode, nonAcceptableCodes)
+	fmt.Printf("\n\n\n\n\n===========resp %+v\n\n\n\n", response)
 	if err != nil {
 		return fmt.Errorf("failed to get consistent response: %v", err)
 	}

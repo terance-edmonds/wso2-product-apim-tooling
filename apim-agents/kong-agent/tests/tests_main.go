@@ -18,6 +18,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os"
 
 	"github.com/cucumber/godog"
@@ -25,14 +27,13 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agents/kong-agent/tests/steps"
 )
 
-func main() {
-	ctx := utils.NewSharedContext()
+func runTestSuite(ctx *utils.SharedContext, path string) int {
 	opts := godog.Options{
 		Format: "progress",
-		Paths:  []string{"./tests/features"},
+		Paths:  []string{path},
 	}
 
-	status := godog.TestSuite{
+	return godog.TestSuite{
 		Name:                 "api_tests",
 		TestSuiteInitializer: func(suiteContext *godog.TestSuiteContext) {},
 		ScenarioInitializer: func(s *godog.ScenarioContext) {
@@ -41,8 +42,32 @@ func main() {
 		},
 		Options: &opts,
 	}.Run()
+}
+
+// go run test_main.go --mode=CPtoDP
+// go run test_main.go --mode=DPtoCP
+func main() {
+	// Define the mode flag
+	mode := flag.String("mode", "", "Test mode: CPtoDP or DPtoCP")
+	flag.Parse()
+
+	ctx := utils.NewSharedContext()
+
+	var status int
+
+	switch *mode {
+	case "CPtoDP":
+		fmt.Println("Running tests for CPtoDP...")
+		status = runTestSuite(ctx, "./tests/features/agent-cptodp")
+	case "DPtoCP":
+		fmt.Println("Running tests for DPtoCP...")
+		status = runTestSuite(ctx, "./tests/features/agent-dptocp")
+	default:
+		fmt.Println("Invalid or missing mode. Use --mode=CPtoDP or --mode=DPtoCP")
+		os.Exit(1)
+	}
 
 	if status != 0 {
-		os.Exit(status)
+		os.Exit(1) // Exit with failure if the test fails
 	}
 }

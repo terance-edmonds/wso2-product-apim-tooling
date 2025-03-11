@@ -58,64 +58,36 @@ func (cw *CRWatcher) Watch() {
 	// Load in-cluster Kubernetes config
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		loggers.LoggerWatcher.Errorf("Failed to load in-cluster config: %v", err)
-		return
+		panic(err)
 	}
 
 	// Create dynamic Kubernetes client
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		loggers.LoggerWatcher.Errorf("Failed to create dynamic client: %v", err)
-		return
+		panic(err)
 	}
 	cw.DynamicClient = dynamicClient
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 
 	// Start watching each resource
 	for _, gvr := range cw.GroupVersions {
-		go cw.watchResourceWithRetries(ctx, gvr, cw.Namespace)
+		go cw.watchResource(ctx, cw.DynamicClient, gvr, cw.Namespace)
 	}
 
 	// Keep running
 	select {}
 }
 
-// watchResourceWithRetries watches a specific GVR in a namespace and retries if it stops unexpectedly
-func (cw *CRWatcher) watchResourceWithRetries(ctx context.Context, gvr schema.GroupVersionResource, namespace string) {
-	for {
-		select {
-		case <-ctx.Done():
-			loggers.LoggerWatcher.Infof("Stopping watch for %s", gvr.Resource)
-			return
-		default:
-			loggers.LoggerWatcher.Infof("Starting watch for %s in namespace %s", gvr.Resource, namespace)
-			err := cw.startInformer(ctx, gvr, namespace)
-			if err != nil {
-				loggers.LoggerWatcher.Errorf("Error watching %s: %v", gvr.Resource, err)
-			}
-			loggers.LoggerWatcher.Warnf("Restarting watch for %s after 5 seconds", gvr.Resource)
-			time.Sleep(5 * time.Second) // Avoid aggressive restarts
-		}
-	}
-}
-
-// startInformer starts an informer for a specific resource and handles events
-func (cw *CRWatcher) startInformer(ctx context.Context, gvr schema.GroupVersionResource, namespace string) error {
-	defer func() {
-		if r := recover(); r != nil {
-			loggers.LoggerWatcher.Errorf("Recovered from panic in watch for %s: %v", gvr.Resource, r)
-		}
-	}()
-
+// watchResource watches a specific GVR in a namespace
+func (cw *CRWatcher) watchResource(ctx context.Context, client dynamic.Interface, gvr schema.GroupVersionResource, namespace string) {
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				return cw.DynamicClient.Resource(gvr).Namespace(namespace).List(ctx, options)
+				return client.Resource(gvr).Namespace(namespace).List(ctx, options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				return cw.DynamicClient.Resource(gvr).Namespace(namespace).Watch(ctx, options)
+				return client.Resource(gvr).Namespace(namespace).Watch(ctx, options)
 			},
 		},
 		&unstructured.Unstructured{},
@@ -129,7 +101,7 @@ func (cw *CRWatcher) startInformer(ctx context.Context, gvr schema.GroupVersionR
 			if cw.AddFunc != nil {
 				cw.AddFunc(u)
 			} else {
-				loggers.LoggerWatcher.Infof("%s Added: %s/%s", gvr.Resource, u.GetNamespace(), u.GetName())
+				loggers.LoggerWatcher.Printf("%s Added: %s/%s\n", gvr.Resource, u.GetNamespace(), u.GetName())
 			}
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
@@ -138,7 +110,7 @@ func (cw *CRWatcher) startInformer(ctx context.Context, gvr schema.GroupVersionR
 			if cw.UpdateFunc != nil {
 				cw.UpdateFunc(oldU, newU)
 			} else {
-				loggers.LoggerWatcher.Infof("%s Updated: %s/%s", gvr.Resource, newU.GetNamespace(), newU.GetName())
+				loggers.LoggerWatcher.Printf("%s Updated: %s/%s\n", gvr.Resource, newU.GetNamespace(), newU.GetName())
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -146,13 +118,12 @@ func (cw *CRWatcher) startInformer(ctx context.Context, gvr schema.GroupVersionR
 			if cw.DeleteFunc != nil {
 				cw.DeleteFunc(u)
 			} else {
-				loggers.LoggerWatcher.Infof("%s Deleted: %s/%s", gvr.Resource, u.GetNamespace(), u.GetName())
+				loggers.LoggerWatcher.Printf("%s Deleted: %s/%s\n", gvr.Resource, u.GetNamespace(), u.GetName())
 			}
 		},
 	})
 
 	informer.Run(ctx.Done())
-	return nil
 }
 
 func init() {

@@ -39,7 +39,7 @@ Feature: API Deployment
     And I eventually receive 200 response code, not accepting
       | 429 |
 
-  Scenario: Undeploying an already existing REST API
+  Scenario Outline: Undeploying an already existing REST API
     And I have a DCR application
     And I have a valid Devportal access token
     Then I delete the application "SampleApp" from devportal

@@ -209,13 +209,21 @@ func handleDeleteHttpRouteResource(u *unstructured.Unstructured) {
 	apiMutex.Lock()
 	defer apiMutex.Unlock()
 
+	apiHash, exists := discoverPkg.APIHashMap[apiUUID]
+	if !exists {
+		loggers.LoggerWatcher.Warnf("discoverPkg.APIHash %s not found for deleted HTTPRoute %s/%s", apiUUID, u.GetNamespace(), u.GetName())
+	} else {
+		delete(discoverPkg.APIHashMap, apiUUID)
+		loggers.LoggerWatcher.Warnf("discoverPkg.APIHash %s deleted", apiHash)
+	}
+
 	api, exists := discoverPkg.APIMap[apiUUID]
 	if !exists {
 		loggers.LoggerWatcher.Warnf("discoverPkg.API %s not found for deleted HTTPRoute %s/%s", apiUUID, u.GetNamespace(), u.GetName())
 		return
 	}
-
 	delete(discoverPkg.APIMap, apiUUID)
+
 	discoverPkg.QueueEvent(managementserver.DeleteEvent, api, u.GetName(), u.GetNamespace())
 	loggers.LoggerWatcher.Warnf("discoverPkg.API %s deleted", apiUUID)
 }
@@ -247,7 +255,7 @@ func buildAPIFromHTTPRoutes(httpRoutes []*unstructured.Unstructured, apiUUID str
 	api := managementserver.API{
 		APIUUID:          apiUUID,
 		APIName:          fmt.Sprintf("api-%s", apiUUID),
-		APIVersion:       "",
+		APIVersion:       "v1",
 		IsDefaultVersion: true,
 		APIType:          "rest",
 	}
@@ -277,9 +285,15 @@ func updateAPIFromHTTPRoute(api *managementserver.API, u *unstructured.Unstructu
 	}
 
 	// Set display name if exists
-	displayName, found := u.GetLabels()["displayName"]
-	if found && displayName != "" {
-		api.APIName = displayName
+	apiName, found := u.GetLabels()["apiName"]
+	if found && apiName != "" {
+		api.APIName = apiName
+	}
+
+	// Set api version if exists
+	apiVersion, found := u.GetLabels()["apiVersion"]
+	if found && apiVersion != "" {
+		api.APIVersion = apiVersion
 	}
 
 	// Set environment (default to "production" if not found)

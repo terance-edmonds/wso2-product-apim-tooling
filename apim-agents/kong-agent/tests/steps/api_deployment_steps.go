@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/cucumber/godog"
@@ -60,6 +61,10 @@ func APIDeploymentSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
 		return findAPIUUIDUsingName(ctx, name)
 	})
 	s.Step(`^I undeploy the selected API$`, func() error { return iUndeployTheAPI(ctx) })
+
+	s.Step(`^I use the api crs files "([^"]*)" in resources$`, func(path string) error { return iUseTheApiCRsFiles(ctx, path) })
+	s.Step(`^I apply the K8Artifacts belongs to that API$`, func() error { return iApplyTheK8ArtifactsBelongsToThatAPI(ctx) })
+	s.Step(`^I undeploy the API in api crs path$`, func() error { return IUndeployTheAPIInApiCrsPath(ctx) })
 }
 
 // iHaveTheAPIPayloadFile loads the API payload file by its name.
@@ -691,5 +696,63 @@ func iUndeployTheAPI(ctx *utils.SharedContext) error {
 	// Wait for 3 seconds
 	time.Sleep(3 * time.Second)
 
+	return nil
+}
+
+// iUseTheApiCRsFiles sets the API CRs containing folder path.
+func iUseTheApiCRsFiles(ctx *utils.SharedContext, crPath string) error {
+	// Get the file path using the payload file name
+	payloadFilePath := fmt.Sprintf("./tests/%s", crPath)
+	_, err := os.Stat(payloadFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file not found: %s", payloadFilePath)
+		}
+		return err
+	}
+
+	// Store the file path in the context
+	ctx.AddStoreValue("apiCRPath", payloadFilePath)
+
+	return nil
+}
+
+// iApplyTheK8ArtifactsBelongsToThatAPI apply the k8s CRs to kubernetes cluster.
+func iApplyTheK8ArtifactsBelongsToThatAPI(ctx *utils.SharedContext) error {
+	apiCRPath := ctx.GetStoreValue("apiCRPath").(string)
+	if apiCRPath == "" {
+		return fmt.Errorf("API CR path not found in context store")
+	}
+
+	// Execute `kubectl apply -f .` in the given path
+	cmd := exec.Command("kubectl", "apply", "-f", ".")
+	cmd.Dir = apiCRPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to apply Kubernetes artifacts: %v\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("Successfully applied Kubernetes artifacts:\n%s\n", string(output))
+	return nil
+}
+
+// IUndeployTheAPIInApiCrsPath removes the k8s CRs from kubernetes cluster.
+func IUndeployTheAPIInApiCrsPath(ctx *utils.SharedContext) error {
+	apiCRPath := ctx.GetStoreValue("apiCRPath").(string)
+	if apiCRPath == "" {
+		return fmt.Errorf("API CR path not found in context store")
+	}
+
+	// Execute `kubectl apply -f .` in the given path
+	cmd := exec.Command("kubectl", "delete", "-f", ".")
+	cmd.Dir = apiCRPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to remove Kubernetes artifacts: %v\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("Successfully removed Kubernetes artifacts:\n%s\n", string(output))
 	return nil
 }
