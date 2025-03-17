@@ -86,7 +86,7 @@ func GenerateCR(api string, organizationID string, apiUUID string) *K8sArtifacts
 	// create ratelimit policies
 	if apkConf.RateLimit != nil {
 		rateLimitConfig := KongPluginConfig{
-			"limit_by": "route",
+			"limit_by": "service",
 		}
 		PrepareRateLimit(&rateLimitConfig, apkConf.RateLimit.Unit, apkConf.RateLimit.RequestsPerUnit)
 		kongRateLimitPlugin := GenerateKongPlugin(nil, kongRateLimitingPluginName, "api", rateLimitConfig, true)
@@ -220,13 +220,21 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, apkConf *types.APKConf, organ
 
 			// handle ratelimit configuration if httproute has only one operation
 			for _, operation := range operations {
+				// prepare base path and operation path
+				basePath := utils.GeneratePath(apkConf.BasePath, apkConf.Version)
+				operationTarget := "/*"
+				if operation.Target != "" {
+					operationTarget = operation.Target
+				}
+
 				// create and add a ratelimit plugin
 				if operation.RateLimit != nil {
 					rateLimitConfig := KongPluginConfig{
-						"limit_by": "route",
+						"limit_by": "path",
+						"path":     utils.RetrievePathPrefix(operationTarget, basePath),
 					}
 					PrepareRateLimit(&rateLimitConfig, operation.RateLimit.Unit, operation.RateLimit.RequestsPerUnit)
-					rateLimitPlugin := GenerateKongPlugin(&operation, kongRateLimitingPluginName, "route", rateLimitConfig, true)
+					rateLimitPlugin := GenerateKongPlugin(&operation, kongRateLimitingPluginName, "path", rateLimitConfig, true)
 					k8sArtifact.KongPlugins[rateLimitPlugin.ObjectMeta.Name] = rateLimitPlugin
 
 					routeKongPlugins = append(routeKongPlugins, rateLimitPlugin.ObjectMeta.Name)

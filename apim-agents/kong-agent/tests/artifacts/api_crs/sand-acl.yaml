@@ -1,7 +1,7 @@
 apiVersion: configuration.konghq.com/v1
 config:
   allow:
-  - api-780d341c-20f0-44e4-aa42-4cff613b9d50-sandbox
+  - api-67321124153e41d57e7b427c1150106de015240b-sandbox
 kind: KongPlugin
 metadata:
   labels:

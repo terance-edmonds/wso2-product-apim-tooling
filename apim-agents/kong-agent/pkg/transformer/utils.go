@@ -28,7 +28,7 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 )
 
-var allowedTimeUnits = map[string]string{"min": "minute", "hours": "hour", "days": "day"}
+var allowedTimeUnits = map[string]string{"min": "minute", "hours": "hour", "days": "day", "Minute": "minute", "Hour": "hour", "Day": "day"}
 
 // GetUniqueIDForAPI will generate a unique ID for newly created APIs
 func GetUniqueIDForAPI(name, version, organization string) string {

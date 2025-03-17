@@ -64,7 +64,17 @@ func APIDeploymentSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
 
 	s.Step(`^I use the api crs files "([^"]*)" in resources$`, func(path string) error { return iUseTheApiCRsFiles(ctx, path) })
 	s.Step(`^I apply the K8Artifacts belongs to that API$`, func() error { return iApplyTheK8ArtifactsBelongsToThatAPI(ctx) })
-	s.Step(`^I undeploy the API in api crs path$`, func() error { return IUndeployTheAPIInApiCrsPath(ctx) })
+	s.Step(`^I undeploy the API in api crs path$`, func() error { return iUndeployTheAPIInApiCrsPath(ctx) })
+	s.Step(`^I set new API throttling policy allowing "([^"]*)" requests per every "([^"]*)" minute$`, func(requestCount string, unitTime string) error {
+		return addNewCustomThrottlingPolicy(ctx, requestCount, unitTime)
+	})
+	s.Step(`^I delete the created API throttling policy$`, func() error {
+		return deleteThrottlingPolicy(ctx)
+	})
+	s.Step(`^the definition file "([^"]*)"$`, func(definitionFileName string) error {
+		return iHaveTheDefinitionFile(ctx, definitionFileName)
+	})
+
 }
 
 // iHaveTheAPIPayloadFile loads the API payload file by its name.
@@ -117,13 +127,13 @@ func makeImportAPICreationRequest(ctx *utils.SharedContext, definitionType strin
 			{Name: "additionalProperties", File: utils.OpenFile(payloadFilePath)},
 		}
 	} else if definitionType == "File" {
-		definitionFilePath := ctx.GetStoreValue("definitionFile").(string)
-		if definitionFilePath == "" {
+		definitionFile := ctx.GetStoreValue("definitionFile").(string)
+		if definitionFile == "" {
 			return fmt.Errorf("definitionFile not found in context store")
 		}
-		fmt.Println("OAS File:", definitionFilePath)
+		fmt.Println("OAS File:", definitionFile)
 		fileParts = []utils.MultipartFilePart{
-			{Name: "file", File: utils.OpenFile(definitionFilePath)},
+			{Name: "file", File: utils.OpenFile(definitionFile)},
 			{Name: "additionalProperties", File: utils.OpenFile(payloadFilePath)},
 		}
 	} else {
@@ -132,6 +142,7 @@ func makeImportAPICreationRequest(ctx *utils.SharedContext, definitionType strin
 
 	// Send HTTP request
 	resp, err := httpclient.DoPostWithMultipartFiles(utils.GetImportAPIURL(), fileParts, headers)
+
 	if err != nil {
 		return fmt.Errorf("error sending request: %v", err)
 	}
@@ -150,7 +161,7 @@ func makeImportAPICreationRequest(ctx *utils.SharedContext, definitionType strin
 	}
 
 	ctx.SetApiUUID(apiUUID)
-	time.Sleep(3 * time.Second) // Simulating Java sleep
+	time.Sleep(3 * time.Second)
 	return nil
 }
 
@@ -225,8 +236,6 @@ func makeChangeLifecycleRequest(ctx *utils.SharedContext) error {
 	}
 
 	ctx.SetResponse(resp)
-
-	// Wait for 3 seconds (simulating the sleep in the Java code)
 	time.Sleep(3 * time.Second)
 
 	return nil
@@ -737,8 +746,8 @@ func iApplyTheK8ArtifactsBelongsToThatAPI(ctx *utils.SharedContext) error {
 	return nil
 }
 
-// IUndeployTheAPIInApiCrsPath removes the k8s CRs from kubernetes cluster.
-func IUndeployTheAPIInApiCrsPath(ctx *utils.SharedContext) error {
+// iUndeployTheAPIInApiCrsPath removes the k8s CRs from kubernetes cluster.
+func iUndeployTheAPIInApiCrsPath(ctx *utils.SharedContext) error {
 	apiCRPath := ctx.GetStoreValue("apiCRPath").(string)
 	if apiCRPath == "" {
 		return fmt.Errorf("API CR path not found in context store")
@@ -754,5 +763,90 @@ func IUndeployTheAPIInApiCrsPath(ctx *utils.SharedContext) error {
 	}
 
 	fmt.Printf("Successfully removed Kubernetes artifacts:\n%s\n", string(output))
+	return nil
+}
+
+// addNewCustomThrottlingPolicy sets a new API throttling policy allowing a specified number of requests per minute.
+func addNewCustomThrottlingPolicy(ctx *utils.SharedContext, requestCount, unitTime string) error {
+	httpclient := ctx.GetHTTPClient()
+	payload := fmt.Sprintf(`{
+        "policyName": "TestRatelimit",
+        "description": "Test description",
+        "conditionalGroups": [],
+        "defaultLimit": {
+            "requestCount": {
+                "timeUnit": "min",
+                "unitTime": %s,
+                "requestCount": %s
+            },
+            "type": "REQUESTCOUNTLIMIT",
+            "bandwidth": null
+        }
+    }`, unitTime, requestCount)
+
+	headers := map[string]string{
+		constants.RequestHeaders.Authorization: "Bearer " + ctx.GetAdminAccessToken(),
+		constants.RequestHeaders.Host:          constants.DefaultAPIMAPIHost,
+	}
+
+	resp, err := httpclient.DoPost(
+		utils.GetAPIThrottlingConfigEndpoint(),
+		headers,
+		payload,
+		constants.ContentTypes.ApplicationJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("error setting API throttling policy: %v", err)
+	}
+
+	ctx.SetResponse(resp)
+	responseBody, err := utils.ResponseEntityBodyToString(resp)
+	if err != nil {
+		return fmt.Errorf("error reading response body: %v", err)
+	}
+
+	ctx.SetResponseBody(responseBody)
+	policyID, err := utils.ExtractKeys(responseBody, "policyId")
+	if err != nil {
+		return fmt.Errorf("error extracting policy ID: %v", err)
+	}
+	ctx.SetPolicyID(policyID)
+
+	time.Sleep(3 * time.Second)
+	return nil
+}
+
+// deleteThrottlingPolicy deletes the created API throttling policy using the stored policy ID.
+func deleteThrottlingPolicy(ctx *utils.SharedContext) error {
+	httpclient := ctx.GetHTTPClient()
+	headers := map[string]string{
+		constants.RequestHeaders.Authorization: "Bearer " + ctx.GetAdminAccessToken(),
+		constants.RequestHeaders.Host:          constants.DefaultAPIMAPIHost,
+	}
+
+	policyID := ctx.GetPolicyID()
+	fmt.Printf("PolicyID to be deleted: %s\n", policyID)
+
+	uri := utils.GetAPIThrottlingConfigEndpoint() + "/" + policyID
+	httpResponse, err := httpclient.DoDelete(uri, headers)
+	if err != nil {
+		return err
+	}
+
+	ctx.SetResponse(httpResponse)
+	responseBody, err := utils.ResponseEntityBodyToString(httpResponse)
+	if err != nil {
+		return fmt.Errorf("error reading response body: %v", err)
+	}
+
+	ctx.SetResponseBody(responseBody)
+	time.Sleep(3 * time.Second)
+	return nil
+}
+
+// iHaveTheDefinitionFile loads the definition file from the given file name.
+func iHaveTheDefinitionFile(ctx *utils.SharedContext, definitionFile string) error {
+	definitionFilePath := fmt.Sprintf("./tests/%s", definitionFile)
+	ctx.AddStoreValue("definitionFile", definitionFilePath)
 	return nil
 }

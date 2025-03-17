@@ -428,6 +428,7 @@ func OpenFile(filePath string) *os.File {
 	// Open the file in read-only mode
 	file, err := os.Open(filePath)
 	if err != nil {
+		fmt.Printf("Open file error: %v", err)
 		return nil
 	}
 

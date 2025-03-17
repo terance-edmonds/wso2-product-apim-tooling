@@ -55,7 +55,7 @@ func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c 
 				} else {
 					if policy.DefaultLimit.RequestCount.TimeUnit != "" {
 						rateLimitConfig := transformer.KongPluginConfig{
-							"limit_by": "consumer",
+							"limit_by": "service",
 						}
 						// Add corresponding rate limit configuration
 						transformer.PrepareRateLimit(&rateLimitConfig, policy.DefaultLimit.RequestCount.TimeUnit, policy.DefaultLimit.RequestCount.UnitTime)

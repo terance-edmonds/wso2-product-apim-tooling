@@ -41,6 +41,9 @@ func BaseSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
 	s.Step(`^the response body should contain "([^"]*)"$`, func(content string) error {
 		return theResponseBodyShouldContain(ctx, content)
 	})
+	s.Step(`^the response body should contain key "([^"]*)" and value "([^"]*)"$`, func(key string, value string) error {
+		return theResponseBodyShouldContainKeyValue(ctx, key, value)
+	})
 	s.Step(`^I wait for (\d+) seconds$`, func(seconds int) error { return waitForSeconds(seconds) })
 	s.Step(`^I have a valid Devportal access token$`, func() error { return iHaveValidDevportalAccessToken(ctx) })
 	s.Step(`^I set headers$`, func(table *godog.Table) error { return setHeaders(ctx, table) })
@@ -50,6 +53,11 @@ func BaseSteps(s *godog.ScenarioContext, ctx *utils.SharedContext) {
 	s.Step(`^I eventually receive (\d+) response code, not accepting$`, func(code int, table *godog.Table) error {
 		return iHaveEventualSuccess(ctx, code, table)
 	})
+	s.Step(`^I have a valid Adminportal access token$`, func() error { return iHaveValidAdminPortalAccessToken(ctx) })
+	s.Step(`^I wait for next minute strictly$`, func() error {
+		return waitForNextMinuteStrictly()
+	})
+
 }
 
 // theSystemIsReady checks if the system is ready to proceed with tests.
@@ -159,6 +167,20 @@ func theResponseStatusCodeShouldBe(ctx *utils.SharedContext, expectedStatusCode 
 func theResponseBodyShouldContain(ctx *utils.SharedContext, expectedText string) error {
 	// Get the response body from the context
 	responseBody := ctx.GetResponseBody()
+
+	// Check if the response body contains the expected text
+	if !strings.Contains(responseBody, expectedText) {
+		return fmt.Errorf("expected response body to contain: %s, but got: %s", expectedText, responseBody)
+	}
+
+	return nil
+}
+
+// theResponseBodyShouldContainKeyValue checks if the response body contains the expected json key pair value.
+func theResponseBodyShouldContainKeyValue(ctx *utils.SharedContext, key string, value string) error {
+	// Get the response body from the context
+	responseBody := ctx.GetResponseBody()
+	expectedText := fmt.Sprintf("\"%v\":\"%v\"", key, value)
 
 	// Check if the response body contains the expected text
 	if !strings.Contains(responseBody, expectedText) {
@@ -326,7 +348,7 @@ func eventualSuccess(ctx *utils.SharedContext, statusCode int, nonAcceptableCode
 
 	// If the status code is different, attempt to get a consistent response
 	response, err := httpclient.ExecuteLastRequestForEventualConsistentResponse(statusCode, nonAcceptableCodes)
-	fmt.Printf("\n\n\n\n\n===========resp %+v\n\n\n\n", response)
+
 	if err != nil {
 		return fmt.Errorf("failed to get consistent response: %v", err)
 	}
@@ -358,4 +380,49 @@ func iHaveEventualSuccess(ctx *utils.SharedContext, statusCode int, dataTable *g
 
 	// Call the eventualSuccess function
 	return eventualSuccess(ctx, statusCode, nonAcceptableCodes)
+}
+
+// iHaveValidAdminPortalAccessToken retrieves a valid Admin Portal access token and stores it in the shared context.
+func iHaveValidAdminPortalAccessToken(ctx *utils.SharedContext) error {
+	fmt.Println("Basic Auth Header:", ctx.GetBasicAuthToken())
+	httpclient := ctx.GetHTTPClient()
+
+	headers := map[string]string{
+		constants.RequestHeaders.Host:          constants.DefaultAPIMIDPHost,
+		constants.RequestHeaders.Authorization: "Basic " + ctx.GetBasicAuthToken(),
+	}
+
+	requestBody := "grant_type=password&username=admin&password=admin&scope=apim:app_manage apim:admin_tier_view apim:admin_tier_manage"
+
+	resp, err := httpclient.DoPost(
+		utils.GetAPIMTokenEndpointURL(),
+		headers,
+		requestBody,
+		constants.ContentTypes.ApplicationXWWWFormURLEncoded,
+	)
+	if err != nil {
+		return fmt.Errorf("error fetching Admin Portal access token: %v", err)
+	}
+
+	token, err := utils.ExtractToken(resp)
+	if err != nil {
+		return fmt.Errorf("error extracting Admin Portal token: %v", err)
+	}
+
+	ctx.SetAdminAccessToken(token)
+	ctx.AddStoreValue("adminportalAccessToken", token)
+	fmt.Println("Admin Access Token:", token)
+
+	return nil
+}
+
+// waitForNextMinuteStrictly waits until the next minute strictly before proceeding.
+func waitForNextMinuteStrictly() error {
+	now := time.Now()
+	nextMinute := now.Truncate(time.Minute).Add(time.Minute)
+	secondsToWait := time.Until(nextMinute).Seconds()
+
+	time.Sleep(time.Duration(secondsToWait+5) * time.Second)
+	fmt.Printf("Current time: %s\n", time.Now().Format(time.RFC3339))
+	return nil
 }

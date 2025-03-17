@@ -221,7 +221,6 @@ func (client *SimpleHTTPClient) DoPostWithMultipartFiles(url string, fileParts [
 			if err != nil {
 				return nil, err
 			}
-
 		} else if filePart.Text != "" {
 			err := writer.WriteField(filePart.Name, filePart.Text)
 			if err != nil {

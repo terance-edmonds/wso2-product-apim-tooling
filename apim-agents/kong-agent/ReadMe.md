@@ -12,7 +12,7 @@ import (
 )
 ```
 
-## 2. Register the Kong Agent 
+## 2. Register the Kong Agent
 Update the `init()` function in `registry.go` to register the Kong Agent:
 
 ```go
@@ -31,4 +31,30 @@ agent:
 
 gatewayAgent:
   key1: value1
+```
+
+## 4. Testing the Integration
+
+### 4.1 Deploying the APIM Control Plane (CP) in Testing Mode
+Before running tests, ensure that the **APIM Control Plane** is deployed in testing mode, either **CPtoDP** or **DPtoCP**, with Kong Gateway and Kong Agent.
+
+### 4.2 Setting Up the Key Manager's Certificate
+1. Log in to the **Admin Portal** (`am.wso2.com/admin`).
+2. Navigate to **Key Managers** -> **Select Resident Key Manager**.
+3. In the **Certificates** section, select **PEM**.
+4. Upload the **certificate PEM file** and click **Save**.
+
+### 4.3 Running the Tests
+To run the tests, navigate to the `kong-agent` directory and execute the following commands based on the test mode:
+
+#### Running CP to DP Test
+```sh
+cd kong-agent
+go run tests/tests_main.go --mode=CPtoDP
+```
+
+#### Running DP to CP Test
+```sh
+cd kong-agent
+go run tests/tests_main.go --mode=DPtoCP
 ```

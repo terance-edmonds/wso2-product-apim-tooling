@@ -1,7 +1,7 @@
 apiVersion: configuration.konghq.com/v1
 config:
   allow:
-  - api-379d3fa932d7f218c98e34f7c1901c56e0981b1a-production
+  - api-67321124153e41d57e7b427c1150106de015240b-production
 kind: KongPlugin
 metadata:
   labels:

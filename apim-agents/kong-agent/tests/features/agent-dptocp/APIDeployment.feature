@@ -34,22 +34,24 @@ Feature: API Deploying in DP to CP Flow
     And I send "GET" request to "https://default.gw.wso2.com:8443/httpbin/1.0.0/get" with body ""
     And I eventually receive 200 response code, not accepting
       | 429 |
-    And the response body should contain "https://httpbin.org/get"
+    And the response body should contain "http://default.gw.wso2.com/get"
     And I send "POST" request to "https://default.gw.wso2.com:8443/httpbin/1.0.0/post" with body ""
     And I eventually receive 200 response code, not accepting
       | 429 |
-    And the response body should contain "https://httpbin.org/post"
-  # Scenario Outline: Undeploy API
-  #   Given The system is ready
-  #   When I undeploy the API in api crs path
-  #   And I have a DCR application
-  #   And I have a valid Devportal access token
-  #   Then I delete the application "SampleApp" from devportal
-  #   Then the response status code should be 200
-  #   And I have a valid Publisher access token
-  #   Then I find the apiUUID of the API created with the name "APIResourceEndpoint"
-  #   Then I undeploy the selected API
-  #   Then the response status code should be 200
-  #   Examples:
-  #     | apiID         | expectedStatusCode |
-  #     | endpoint-test |                202 |
+    And the response body should contain "http://default.gw.wso2.com/post"
+
+  Scenario Outline: Undeploy API
+    Given The system is ready
+    When I undeploy the API in api crs path
+    And I have a DCR application
+    And I have a valid Devportal access token
+    Then I delete the application "SampleApp" from devportal
+    Then the response status code should be 200
+    And I have a valid Publisher access token
+    Then I find the apiUUID of the API created with the name "APIResourceEndpoint"
+    Then I undeploy the selected API
+    Then the response status code should be 200
+
+    Examples:
+      | apiID         | expectedStatusCode |
+      | endpoint-test |                202 |
