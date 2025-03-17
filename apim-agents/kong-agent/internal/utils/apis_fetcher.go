@@ -64,7 +64,7 @@ func FetchAPIsOnEvent(conf *config.Config, apiUUID *string, k8sClient client.Cli
 						return nil, err
 					}
 
-					api, apiUUID, revisionID, configuredRateLimitPoliciesMap, _, _, _, _, apkErr := transformer.GenerateConf(artifact.APIJson, artifact.CertArtifact, apiDeployment.OrganizationID)
+					api, apiUUID, revisionID, configuredRateLimitPoliciesMap, _, _, _, _, apkErr := transformer.GenerateConf(artifact.APIJson, artifact.CertArtifact, artifact.Endpoints, apiDeployment.OrganizationID)
 					if apkErr != nil {
 						logger.LoggerUtils.Errorf("Error while generating APK-Conf: %v", apkErr)
 						return nil, err
