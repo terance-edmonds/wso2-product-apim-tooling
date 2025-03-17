@@ -141,14 +141,14 @@ func TestAPKConfGeneration(t *testing.T) {
 				assert.NoError(t, err)
 				assert.IsType(t, &APIArtifact{}, apiArtifact)
 
-				config, apiUUID, revisionID, configuredRateLimitPoliciesMap, endpointSecurityData, _, _, _, apkErr := GenerateConf(apiArtifact.APIJson, apiArtifact.CertArtifact, "default")
+				apkConf, apiUUID, revisionID, configuredRateLimitPoliciesMap, endpointSecurityData, _, _, _, apkErr := GenerateConf(apiArtifact.APIJson, apiArtifact.CertArtifact, apiArtifact.Endpoints, "default")
 
 				assert.NoError(t, apkErr)
-				assert.NotEmpty(t, config)
+				assert.NotEmpty(t, apkConf)
 				assert.NotEqual(t, "null", apiUUID)
 				assert.NotEqual(t, uint32(0), revisionID)
 				assert.NotNil(t, configuredRateLimitPoliciesMap)
-				assert.IsType(t, EndpointSecurityConfig{}, endpointSecurityData) // Need to be refined maybe
+				assert.IsType(t, []EndpointSecurityConfig{}, endpointSecurityData) // Need to be refined maybe
 			}
 		}
 	}

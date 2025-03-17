@@ -41,12 +41,13 @@ import (
 	dpv1alpha1 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha1"
 	dpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha2"
 	dpv1alpha3 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha3"
+	dpv1alpha4 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha4"
 	eventHub "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
+	"github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/transformer"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/loggers"
 	k8Yaml "sigs.k8s.io/yaml"
 
@@ -56,7 +57,7 @@ import (
 // GenerateCRs takes the .apk-conf, api definition, vHost and the organization for a particular API and then generate and returns
 // the relavant CRD set as a zip
 func GenerateCRs(apkConf string, apiDefinition string, certContainer transformer.CertContainer, k8ResourceGenEndpoint string, organizationID string) (*K8sArtifacts, error) {
-	k8sArtifact := K8sArtifacts{HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute), GQLRoutes: make(map[string]*dpv1alpha2.GQLRoute), Backends: make(map[string]*dpv1alpha2.Backend), Scopes: make(map[string]*dpv1alpha1.Scope), Authentication: make(map[string]*dpv1alpha2.Authentication), APIPolicies: make(map[string]*dpv1alpha3.APIPolicy), InterceptorServices: make(map[string]*dpv1alpha1.InterceptorService), ConfigMaps: make(map[string]*corev1.ConfigMap), Secrets: make(map[string]*corev1.Secret), RateLimitPolicies: make(map[string]*dpv1alpha1.RateLimitPolicy), AIRateLimitPolicies: make(map[string]*dpv1alpha3.AIRateLimitPolicy)}
+	k8sArtifact := K8sArtifacts{HTTPRoutes: make(map[string]*gwapiv1.HTTPRoute), GQLRoutes: make(map[string]*dpv1alpha2.GQLRoute), Backends: make(map[string]*dpv1alpha2.Backend), Scopes: make(map[string]*dpv1alpha1.Scope), Authentication: make(map[string]*dpv1alpha2.Authentication), APIPolicies: make(map[string]*dpv1alpha4.APIPolicy), InterceptorServices: make(map[string]*dpv1alpha1.InterceptorService), ConfigMaps: make(map[string]*corev1.ConfigMap), Secrets: make(map[string]*corev1.Secret), RateLimitPolicies: make(map[string]*dpv1alpha1.RateLimitPolicy), AIRateLimitPolicies: make(map[string]*dpv1alpha3.AIRateLimitPolicy)}
 	if apkConf == "" {
 		logger.LoggerTransformer.Error("Empty apk-conf parameter provided. Unable to generate CRDs.")
 		return nil, errors.New("Error: APK-Conf can't be empty")
@@ -159,7 +160,7 @@ func GenerateCRs(apkConf string, apiDefinition string, certContainer transformer
 
 		switch kind {
 		case "APIPolicy":
-			var apiPolicy dpv1alpha3.APIPolicy
+			var apiPolicy dpv1alpha4.APIPolicy
 			err = k8Yaml.Unmarshal(yamlData, &apiPolicy)
 			if err != nil {
 				logger.LoggerSync.Errorf("Error unmarshaling APIPolicy YAML: %v", err)
@@ -282,95 +283,6 @@ func GenerateCRs(apkConf string, apiDefinition string, certContainer transformer
 	createEndpointSecrets(certContainer.SecretData, &k8sArtifact)
 
 	return &k8sArtifact, nil
-}
-
-// createEndpointSecrets creates and links the secret CRs need to be created for handling the endpoint security
-func createEndpointSecrets(secretData transformer.EndpointSecurityConfig, k8sArtifact *K8sArtifacts) {
-	createSecret := func(environment string, username, password string, apiKeyValue string, securityType string) {
-		var secret corev1.Secret
-		if securityType == "apikey" {
-			secret = corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Secret",
-					APIVersion: "v1",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      strings.Join([]string{k8sArtifact.API.Name, environment, "secret"}, "-"),
-					Namespace: k8sArtifact.API.Namespace,
-					Labels:    make(map[string]string),
-				},
-				Data: map[string][]byte{
-					"apiKey": []byte(apiKeyValue),
-				},
-			}
-		} else {
-			secret = corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Secret",
-					APIVersion: "v1",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      strings.Join([]string{k8sArtifact.API.Name, environment, "secret"}, "-"),
-					Namespace: k8sArtifact.API.Namespace,
-					Labels:    make(map[string]string),
-				},
-				Data: map[string][]byte{
-					"username": []byte(username),
-					"password": []byte(password),
-				},
-			}
-		}
-		logger.LoggerTransformer.Debugf("New Secret Data for %s: %v", environment, secret)
-		k8sArtifact.Secrets[secret.ObjectMeta.Name] = &secret
-	}
-
-	if secretData.Production.Enabled {
-		if secretData.Production.Username == "" || secretData.Production.Password == "" {
-			createSecret("production", secretData.Production.Username, secretData.Production.Password, secretData.Production.APIKeyValue, secretData.Production.Type)
-		}
-	}
-
-	if secretData.Sandbox.Enabled {
-		createSecret("sandbox", secretData.Sandbox.Username, secretData.Sandbox.Password, secretData.Sandbox.APIKeyValue, secretData.Sandbox.Type)
-	}
-}
-
-// createConfigMaps returns a marshalled yaml of ConfigMap kind after adding the given values
-func createConfigMaps(certFiles map[string]string, k8sArtifact *K8sArtifacts) {
-	for confKey, confValue := range certFiles {
-		pathSegments := strings.Split(confKey, ".")
-		configName := pathSegments[0]
-
-		//TODO: Have to take the version, namespace as parameters instead of hardcoding
-		cm := corev1.ConfigMap{}
-		cm.APIVersion = "v1"
-		cm.Kind = "ConfigMap"
-		cm.ObjectMeta.Name = k8sArtifact.API.Name + "-" + configName
-
-		if cm.ObjectMeta.Labels == nil {
-			cm.ObjectMeta.Labels = make(map[string]string)
-		}
-
-		if cm.Data == nil {
-			cm.Data = make(map[string]string)
-		}
-		apimCert := confValue
-		// Remove "-----BEGIN CERTIFICATE-----" and "-----END CERTIFICATE-----" strings
-		pemCert := strings.ReplaceAll(apimCert, "-----BEGIN CERTIFICATE-----", "")
-		pemCert = strings.ReplaceAll(pemCert, "-----END CERTIFICATE-----", "")
-		pemCert = strings.TrimSpace(pemCert)
-		// Decode the Base64 encoded certificate content
-		decodedCert, err := base64.StdEncoding.DecodeString(pemCert)
-		logger.LoggerTransformer.Debugf("Decoded Certificate: %v", decodedCert)
-		if err != nil {
-			logger.LoggerTransformer.Errorf("Error decoding the certificate: %v", err)
-		}
-		cm.Data[confKey] = string(decodedCert)
-		certConfigMap := &cm
-
-		logger.LoggerTransformer.Debugf("New ConfigMap Data: %v", *certConfigMap)
-		k8sArtifact.ConfigMaps[certConfigMap.ObjectMeta.Name] = certConfigMap
-	}
 }
 
 // UpdateCRS cr update
@@ -524,4 +436,92 @@ func generateSHA1Hash(input string) string {
 	h := sha1.New() /* #nosec */
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// createConfigMaps returns a marshalled yaml of ConfigMap kind after adding the given values
+func createConfigMaps(certFiles map[string]string, k8sArtifact *K8sArtifacts) {
+	for confKey, confValue := range certFiles {
+		pathSegments := strings.Split(confKey, ".")
+		configName := pathSegments[0]
+
+		//TODO: Have to take the version, namespace as parameters instead of hardcoding
+		cm := corev1.ConfigMap{}
+		cm.APIVersion = "v1"
+		cm.Kind = "ConfigMap"
+		cm.ObjectMeta.Name = k8sArtifact.API.Name + "-" + configName
+
+		if cm.ObjectMeta.Labels == nil {
+			cm.ObjectMeta.Labels = make(map[string]string)
+		}
+
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
+		}
+		apimCert := confValue
+		// Remove "-----BEGIN CERTIFICATE-----" and "-----END CERTIFICATE-----" strings
+		pemCert := strings.ReplaceAll(apimCert, "-----BEGIN CERTIFICATE-----", "")
+		pemCert = strings.ReplaceAll(pemCert, "-----END CERTIFICATE-----", "")
+		pemCert = strings.TrimSpace(pemCert)
+		// Decode the Base64 encoded certificate content
+		decodedCert, err := base64.StdEncoding.DecodeString(pemCert)
+		logger.LoggerTransformer.Debugf("Decoded Certificate: %v", decodedCert)
+		if err != nil {
+			logger.LoggerTransformer.Errorf("Error decoding the certificate: %v", err)
+		}
+		cm.Data[confKey] = string(decodedCert)
+		certConfigMap := &cm
+
+		logger.LoggerTransformer.Debugf("New ConfigMap Data: %v", *certConfigMap)
+		k8sArtifact.ConfigMaps[certConfigMap.ObjectMeta.Name] = certConfigMap
+	}
+}
+
+// createEndpointSecrets creates and links the secret CRs need to be created for handling the endpoint security
+func createEndpointSecrets(secretDataList []transformer.EndpointSecurityConfig, k8sArtifact *K8sArtifacts) {
+	createSecret := func(environment string, username, password string, apiKeyValue string, securityType string, endpointUUID string) {
+		var secret corev1.Secret
+		if securityType == "apikey" {
+			secret = corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      strings.Join([]string{k8sArtifact.API.Name, generateSHA1Hash(endpointUUID), environment, "secret"}, "-"),
+					Namespace: k8sArtifact.API.Namespace,
+					Labels:    make(map[string]string),
+				},
+				Data: map[string][]byte{
+					"apiKey": []byte(apiKeyValue),
+				},
+			}
+		} else {
+			secret = corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: "v1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      strings.Join([]string{k8sArtifact.API.Name, generateSHA1Hash(endpointUUID), environment, "secret"}, "-"),
+					Namespace: k8sArtifact.API.Namespace,
+					Labels:    make(map[string]string),
+				},
+				Data: map[string][]byte{
+					"username": []byte(username),
+					"password": []byte(password),
+				},
+			}
+		}
+		logger.LoggerTransformer.Debugf("New Secret Data for %s: %v", environment, secret)
+		k8sArtifact.Secrets[secret.ObjectMeta.Name] = &secret
+	}
+
+	for _, secretData := range secretDataList {
+		if secretData.Production.Enabled {
+			createSecret("production", secretData.Production.Username, secretData.Production.Password, secretData.Production.APIKeyValue, secretData.Production.Type, secretData.Production.EndpointUUID)
+		}
+		if secretData.Sandbox.Enabled {
+			createSecret("sandbox", secretData.Sandbox.Username, secretData.Sandbox.Password, secretData.Sandbox.APIKeyValue, secretData.Sandbox.Type, secretData.Sandbox.EndpointUUID)
+		}
+	}
 }

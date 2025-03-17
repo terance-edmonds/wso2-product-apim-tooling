@@ -124,34 +124,112 @@ const (
 
 // API holds the api data from adapter api event
 type API struct {
-	APIUUID              string            `json:"apiUUID"`
-	APIName              string            `json:"apiName"`
-	APIVersion           string            `json:"apiVersion"`
-	IsDefaultVersion     bool              `json:"isDefaultVersion"`
-	Definition           string            `json:"definition"`
-	APIType              string            `json:"apiType"`
-	APISubType           string            `json:"apiSubType"`
-	BasePath             string            `json:"basePath"`
-	Organization         string            `json:"organization"`
-	SystemAPI            bool              `json:"systemAPI"`
-	APIProperties        map[string]string `json:"apiProperties,omitempty"`
-	Environment          string            `json:"environment,omitempty"`
-	RevisionID           string            `json:"revisionID"`
-	SandEndpoint         string            `json:"sandEndpoint"`
-	SandEndpointSecurity EndpointSecurity  `json:"sandEndpointSecurity"`
-	ProdEndpoint         string            `json:"prodEndpoint"`
-	ProdEndpointSecurity EndpointSecurity  `json:"prodEndpointSecurity"`
-	EndpointProtocol     string            `json:"endpointProtocol"`
-	CORSPolicy           *CORSPolicy       `json:"cORSPolicy"`
-	Vhost                string            `json:"vhost"`
-	SandVhost            string            `json:"sandVhost"`
-	SecurityScheme       []string          `json:"securityScheme"`
-	AuthHeader           string            `json:"authHeader"`
-	APIKeyHeader         string            `json:"apiKeyHeader"`
-	Operations           []OperationFromDP `json:"operations"`
-	SandAIRL             *AIRL             `json:"sandAIRL"`
-	ProdAIRL             *AIRL             `json:"prodAIRL"`
-	AIConfiguration      AIConfiguration   `json:"aiConfiguration"`
+	APIUUID                string                  `json:"apiUUID"`
+	APIName                string                  `json:"apiName"`
+	APIVersion             string                  `json:"apiVersion"`
+	IsDefaultVersion       bool                    `json:"isDefaultVersion"`
+	Definition             string                  `json:"definition"`
+	APIType                string                  `json:"apiType"`
+	APISubType             string                  `json:"apiSubType"`
+	BasePath               string                  `json:"basePath"`
+	Organization           string                  `json:"organization"`
+	SystemAPI              bool                    `json:"systemAPI"`
+	APIProperties          map[string]string       `json:"apiProperties,omitempty"`
+	Environment            string                  `json:"environment,omitempty"`
+	RevisionID             string                  `json:"revisionID"`
+	SandEndpoint           string                  `json:"sandEndpoint"`
+	SandEndpointSecurity   EndpointSecurity        `json:"sandEndpointSecurity"`
+	ProdEndpoint           string                  `json:"prodEndpoint"`
+	ProdEndpointSecurity   EndpointSecurity        `json:"prodEndpointSecurity"`
+	EndpointProtocol       string                  `json:"endpointProtocol"`
+	CORSPolicy             *CORSPolicy             `json:"cORSPolicy"`
+	Vhost                  string                  `json:"vhost"`
+	SandVhost              string                  `json:"sandVhost"`
+	SecurityScheme         []string                `json:"securityScheme"`
+	AuthHeader             string                  `json:"authHeader"`
+	APIKeyHeader           string                  `json:"apiKeyHeader"`
+	Operations             []OperationFromDP       `json:"operations"`
+	SandAIRL               *AIRL                   `json:"sandAIRL"`
+	ProdAIRL               *AIRL                   `json:"prodAIRL"`
+	AIConfiguration        AIConfiguration         `json:"aiConfiguration"`
+	MultiEndpoints         APIEndpoints            `json:"multiEndpoints"`
+	AIModelBasedRoundRobin *AIModelBasedRoundRobin `json:"modelBasedRoundRobin"`
+}
+
+// AIModelBasedRoundRobin holds the model based round robin configurations
+type AIModelBasedRoundRobin struct {
+	OnQuotaExceedSuspendDuration int             `json:"onQuotaExceedSuspendDuration,omitempty"`
+	ProductionModels             []AIModelWeight `json:"productionModels"`
+	SandboxModels                []AIModelWeight `json:"sandboxModels"`
+}
+
+// AIModelWeight holds the model configurations
+type AIModelWeight struct {
+	Model    string `json:"model"`
+	Endpoint string `json:"endpoint"`
+	Weight   int    `json:"weight,omitempty"`
+}
+
+// APIMEndpoint holds the endpoint data from adapter api event
+type APIMEndpoint struct {
+	EndpointUUID    string             `json:"endpointUuid" yaml:"endpointUuid"`
+	EndpointName    string             `json:"endpointName" yaml:"endpointName"`
+	EndpointConfig  APIMEndpointConfig `json:"endpointConfig" yaml:"endpointConfig"`
+	DeploymentStage string             `json:"deploymentStage" yaml:"deploymentStage"`
+}
+
+// APIMEndpointConfig holds the endpoint configuration data from adapter api event
+type APIMEndpointConfig struct {
+	EndpointType        string               `json:"endpoint_type" yaml:"endpoint_type"`
+	SandboxEndpoints    Endpoints            `json:"sandbox_endpoints" yaml:"sandbox_endpoints"`
+	ProductionEndpoints Endpoints            `json:"production_endpoints" yaml:"production_endpoints"`
+	EndpointSecurity    APIMEndpointSecurity `json:"endpoint_security" yaml:"endpoint_security"`
+}
+
+// APIMEndpointSecurity holds the endpoint security data from adapter api event
+type APIMEndpointSecurity struct {
+	Sandbox    SecurityConfig `json:"sandbox" yaml:"sandbox"`
+	Production SecurityConfig `json:"production" yaml:"production"`
+}
+
+// SecurityConfig holds the security configuration data from adapter api event
+type SecurityConfig struct {
+	APIKeyValue                      string                 `json:"apiKeyValue" yaml:"apiKeyValue"`
+	APIKeyIdentifier                 string                 `json:"apiKeyIdentifier" yaml:"apiKeyIdentifier"`
+	APIKeyIdentifierType             string                 `json:"apiKeyIdentifierType" yaml:"apiKeyIdentifierType"`
+	Type                             string                 `json:"type" yaml:"type"`
+	Username                         string                 `json:"username" yaml:"username"`
+	Password                         string                 `json:"password" yaml:"password"`
+	Enabled                          bool                   `json:"enabled" yaml:"enabled"`
+	AdditionalProperties             map[string]interface{} `json:"additionalProperties" yaml:"additionalProperties"`
+	CustomParameters                 map[string]interface{} `json:"customParameters" yaml:"customParameters"`
+	ConnectionTimeoutDuration        float64                `json:"connectionTimeoutDuration" yaml:"connectionTimeoutDuration"`
+	SocketTimeoutDuration            float64                `json:"socketTimeoutDuration" yaml:"socketTimeoutDuration"`
+	ConnectionRequestTimeoutDuration float64                `json:"connectionRequestTimeoutDuration" yaml:"connectionRequestTimeoutDuration"`
+}
+
+// Endpoints holds the endpoint URLs
+type Endpoints struct {
+	URL string `json:"url" yaml:"url"`
+}
+
+// EndpointConfig holds endpoint-specific settings.
+type EndpointConfig struct { // "prod" or "sand"
+	URL             string
+	SecurityType    string
+	SecurityEnabled bool
+	APIKeyName      string
+	APIKeyIn        string
+	APIKeyValue     string
+	BasicUsername   string
+	BasicPassword   string
+}
+
+// APIEndpoints holds the common protocol and a list of endpoint configurations.
+type APIEndpoints struct {
+	Protocol      string
+	ProdEndpoints []EndpointConfig
+	SandEndpoints []EndpointConfig
 }
 
 // AIRL holds AI ratelimit related data
@@ -202,10 +280,11 @@ type APKHeader struct {
 
 // OperationFromDP holds the path, verb, throttling and interceptor policy
 type OperationFromDP struct {
-	Path    string   `json:"path"`
-	Verb    string   `json:"verb"`
-	Scopes  []string `json:"scopes"`
-	Filters []Filter `json:"filters"`
+	Path                   string                  `json:"path"`
+	Verb                   string                  `json:"verb"`
+	Scopes                 []string                `json:"scopes"`
+	Filters                []Filter                `json:"filters"`
+	AIModelBasedRoundRobin *AIModelBasedRoundRobin `json:"aiModelBasedRoundRobin"`
 }
 
 // Policy holds the policy name and version

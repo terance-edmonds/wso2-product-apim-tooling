@@ -17,33 +17,20 @@
 
 package constants
 
-// Gateway related constants
-const (
-	GatewayName  = "wso2-apk-default"
-	GatewayGroup = "gateway.networking.k8s.io"
-	GatewayKind  = "Gateway"
-)
-
-// TokenIssuer related constants
-const (
-	ConsumerKeyClaim           = "azp"
-	ScopesClaim                = "scope"
-	InternalKeyTokenIssuerName = "Internal Key TokenIssuer"
-	InternalKeySecretName      = "apim-apk-issuer-cert"
-	InternalKeySecretKey       = "wso2.crt"
-	InternalKeySuffix          = "-internal-key-issuer"
-)
-
 // APIM Mediation constants
 const (
-	InterceptorService = "apkCallInterceptorService"
-	BackendJWT         = "backEndJWT"
-	AddHeader          = "apkAddHeader"
-	RemoveHeader       = "apkRemoveHeader"
-	MirrorRequest      = "apkMirrorRequest"
-	RedirectRequest    = "apkRedirectRequest"
+	InterceptorService      = "CallInterceptorService"
+	BackendJWT              = "backEndJWT"
+	AddHeader               = "apkAddHeader"
+	RemoveHeader            = "apkRemoveHeader"
+	MirrorRequest           = "apkMirrorRequest"
+	RedirectRequest         = "apkRedirectRequest"
+	ModelWeightedRoundRobin = "modelWeightedRoundRobin"
+	ModelRoundRobin         = "modelRoundRobin"
 
 	// Version constants
 	V1 = "v1"
-	V2 = "v2"
+
+	// Policy Types
+	CommonType = "common"
 )

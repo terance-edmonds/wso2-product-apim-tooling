@@ -73,7 +73,7 @@ func HandleCreateOrUpdateEvent(event APICPEvent) (string, string, error) {
 	}
 
 	// Generate API and deployment YAMLs
-	apiYaml, definition := createAPIYaml(&event)
+	apiYaml, definition, endpointsYaml := createAPIYaml(&event)
 	deploymentContent := createDeployementYaml(event.API.Vhost)
 	logger.LoggerMgtServer.Debugf("Created apiYaml: %s, \n\n\n created definition file: %s", apiYaml, definition)
 
@@ -84,19 +84,35 @@ func HandleCreateOrUpdateEvent(event APICPEvent) (string, string, error) {
 	}
 
 	// Prepare zip files
-	zipFiles := []utils.ZipFile{
-		{
+	var zipFiles []utils.ZipFile
+	logger.LoggerMgtServer.Debugf("endpoints yaml: %s", endpointsYaml)
+	if endpointsYaml != "{}\n" {
+		logger.LoggerMgtServer.Debugf("Creating zip file with endpoints")
+		zipFiles = []utils.ZipFile{{
 			Path:    fmt.Sprintf("%s-%s/api.yaml", event.API.APIName, event.API.APIVersion),
 			Content: apiYaml,
-		},
-		{
+		}, {
+			Path:    fmt.Sprintf("%s-%s/endpoints.yaml", event.API.APIName, event.API.APIVersion),
+			Content: endpointsYaml,
+		}, {
 			Path:    fmt.Sprintf("%s-%s/deployment_environments.yaml", event.API.APIName, event.API.APIVersion),
 			Content: deploymentContent,
-		},
-		{
+		}, {
 			Path:    definitionPath,
 			Content: definition,
-		},
+		}}
+	} else {
+		logger.LoggerMgtServer.Debugf("Creating zip file without endpoints")
+		zipFiles = []utils.ZipFile{{
+			Path:    fmt.Sprintf("%s-%s/api.yaml", event.API.APIName, event.API.APIVersion),
+			Content: apiYaml,
+		}, {
+			Path:    fmt.Sprintf("%s-%s/deployment_environments.yaml", event.API.APIName, event.API.APIVersion),
+			Content: deploymentContent,
+		}, {
+			Path:    definitionPath,
+			Content: definition,
+		}}
 	}
 
 	var buf bytes.Buffer

@@ -23,6 +23,7 @@ import (
 	dpv1alpha1 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha1"
 	dpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha2"
 	dpv1alpha3 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha3"
+	dpv1alpha4 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha4"
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/eventhub"
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/synchronizer"
@@ -39,6 +40,7 @@ func PreRun(conf *config.Config, scheme *runtime.Scheme) {
 	utilruntime.Must(cpv1alpha2.AddToScheme(scheme))
 	utilruntime.Must(cpv1alpha2.AddToScheme(scheme))
 	utilruntime.Must(dpv1alpha3.AddToScheme(scheme))
+	utilruntime.Must(dpv1alpha4.AddToScheme(scheme))
 }
 
 // Run starts the GRPC server and Rest API server.

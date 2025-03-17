@@ -15,9 +15,17 @@
  *
  */
 
+/*
+ * Package "transformer" contains functions related to converting
+ * API project to apk-conf and generating and modifying CRDs belonging to
+ * a particular API.
+ */
+
 package transformer
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -25,29 +33,47 @@ import (
 
 	"github.com/wso2/product-apim-tooling/apim-agent/internal/constants"
 	eventHub "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
+	logger "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 
-	logger "github.com/wso2/product-apim-tooling/apim-agent/pkg/loggers"
 	"gopkg.in/yaml.v2"
 )
 
 // GenerateConf will Generate the mapped .apk-conf file for a given API Project zip
-func GenerateConf(APIJson string, certArtifact CertificateArtifact, organizationID string) (string, string, uint32, map[string]eventHub.RateLimitPolicy, EndpointSecurityConfig, *API, *AIRatelimit, *AIRatelimit, error) {
+func GenerateConf(APIJson string, certArtifact CertificateArtifact, endpoints string, organizationID string) (string, string, uint32, map[string]eventHub.RateLimitPolicy, []EndpointSecurityConfig, *API, *AIRatelimit, *AIRatelimit, error) {
 
 	apk := &API{}
 
 	var apiYaml APIYaml
+	var endpointsYaml EndpointsYaml
 
 	var configuredRateLimitPoliciesMap = make(map[string]eventHub.RateLimitPolicy)
 
 	logger.LoggerTransformer.Debugf("APIJson: %v", APIJson)
+	logger.LoggerTransformer.Debugf("Endpoints: %v", endpoints)
 
 	apiYamlError := json.Unmarshal([]byte(APIJson), &apiYaml)
+	if apiYamlError != nil {
+		apiYamlError = yaml.Unmarshal([]byte(APIJson), &apiYaml)
+	}
+
+	endpointsYamlError := json.Unmarshal([]byte(endpoints), &endpointsYaml)
+	if endpointsYamlError != nil {
+		endpointsYamlError = yaml.Unmarshal([]byte(endpoints), &endpointsYaml)
+	}
 
 	if apiYamlError != nil {
-		logger.LoggerTransformer.Error("Error while unmarshalling api.json content", apiYamlError)
-		return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, apiYamlError
+		logger.LoggerTransformer.Error("Error while unmarshalling api.json/api.yaml content", apiYamlError)
+		return "", "null", 0, nil, []EndpointSecurityConfig{}, nil, nil, nil, apiYamlError
 	}
+
+	if endpointsYamlError != nil {
+		logger.LoggerTransformer.Error("Error while unmarshalling endpoints.json/endpoints.yaml content", endpointsYamlError)
+		return "", "null", 0, nil, []EndpointSecurityConfig{}, nil, nil, nil, endpointsYamlError
+	}
+
+	endpointList := endpointsYaml.Data
+	logger.LoggerTransformer.Debugf("EndpointList: %v", endpointList)
 
 	apiYamlData := apiYaml.Data
 	logger.LoggerTransformer.Debugf("apiYamlData: %v", apiYamlData)
@@ -60,13 +86,48 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, organization
 	apk.DefinitionPath = "/definition"
 	apk.SubscriptionValidation = true
 
+	sandboxURL := apiYamlData.EndpointConfig.SandboxEndpoints.URL
+	prodURL := apiYamlData.EndpointConfig.ProductionEndpoints.URL
+	primaryProdEndpointID := apiYamlData.PrimaryProductionEndpointID
+	primarySandboxEndpointID := apiYamlData.PrimarySandboxEndpointID
+
+	primaryProdEndpoint := Endpoint{
+		ID:   primaryProdEndpointID,
+		Name: "Primary Production Endpoint",
+		EndpointConfig: EndpointConfig{
+			ProductionEndpoints: EndpointDetails{
+				URL: prodURL,
+			},
+			EndpointType:     apiYamlData.EndpointConfig.EndpointType,
+			EndpointSecurity: apiYamlData.EndpointConfig.EndpointSecurity,
+		},
+		DeploymentStage: "PRODUCTION",
+	}
+
+	primarySandboxEndpoint := Endpoint{
+		ID:   primarySandboxEndpointID,
+		Name: "Primary Sandbox Endpoint",
+		EndpointConfig: EndpointConfig{
+			SandboxEndpoints: EndpointDetails{
+				URL: sandboxURL,
+			},
+			EndpointType:     apiYamlData.EndpointConfig.EndpointType,
+			EndpointSecurity: apiYamlData.EndpointConfig.EndpointSecurity,
+		},
+		DeploymentStage: "SANDBOX",
+	}
+
+	var defaultEndpointList []Endpoint
+	defaultEndpointList = append(defaultEndpointList, primaryProdEndpoint)
+	defaultEndpointList = append(defaultEndpointList, primarySandboxEndpoint)
+
 	if apiYamlData.SubtypeConfiguration.Subtype == "AIAPI" && apiYamlData.SubtypeConfiguration.Configuration != "" {
 		// Unmarshal the _configuration field into the Configuration struct
 		var config Configuration
 		err := json.Unmarshal([]byte(apiYamlData.SubtypeConfiguration.Configuration), &config)
 		if err != nil {
 			fmt.Println("Error unmarshalling _configuration:", err)
-			return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, err
+			return "", "null", 0, nil, []EndpointSecurityConfig{}, nil, nil, nil, err
 		}
 		sha1ValueforCRName := config.LLMProviderID
 		apk.AIProvider = &AIProvider{
@@ -94,7 +155,7 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, organization
 		reqPolicyCount := len(operation.OperationPolicies.Request)
 		resPolicyCount := len(operation.OperationPolicies.Response)
 		reqInterceptor, resInterceptor := getReqAndResInterceptors(reqPolicyCount, resPolicyCount,
-			operation.OperationPolicies.Request, operation.OperationPolicies.Response)
+			operation.OperationPolicies.Request, operation.OperationPolicies.Response, endpointList, defaultEndpointList)
 
 		var opRateLimit *RateLimit
 		if apiYamlData.APIThrottlingPolicy == "" && operation.ThrottlingPolicy != "" {
@@ -135,7 +196,7 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, organization
 	reqPolicyCount := len(apiYaml.Data.APIPolicies.Request)
 	resPolicyCount := len(apiYaml.Data.APIPolicies.Response)
 	reqInterceptor, resInterceptor := getReqAndResInterceptors(reqPolicyCount, resPolicyCount,
-		apiYaml.Data.APIPolicies.Request, apiYaml.Data.APIPolicies.Response)
+		apiYaml.Data.APIPolicies.Request, apiYaml.Data.APIPolicies.Response, endpointList, defaultEndpointList)
 
 	apk.APIPolicies = &OperationPolicies{
 		Request:  *reqInterceptor,
@@ -150,20 +211,28 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, organization
 		certErr := json.Unmarshal([]byte(certArtifact.EndpointCerts), &endpointCertList)
 		if certErr != nil {
 			logger.LoggerTransformer.Errorf("Error while unmarshalling endpoint_cert.json content: %v", apiYamlError)
-			return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, certErr
+			return "", "null", 0, nil, []EndpointSecurityConfig{}, nil, nil, nil, certErr
 		}
 		endCertAvailable = true
 	}
 
-	sandboxURL := apiYamlData.EndpointConfig.SandboxEndpoints.URL
-	prodURL := apiYamlData.EndpointConfig.ProductionEndpoints.URL
-	endpointSecurityData := apiYamlData.EndpointConfig.EndpointSecurity
-	apiUniqueID := GetUniqueIDForAPI(apiYamlData.Name, apiYamlData.Version, apiYamlData.OrganizationID)
-	logger.LoggerTransformer.Infof("Maxtps: %+v", apiYamlData)
-	prodAIRatelimit, sandAIRatelimit := prepareAIRatelimit(apiYamlData.MaxTps)
-	endpointRes := getEndpointConfigs(sandboxURL, prodURL, endCertAvailable, endpointCertList, endpointSecurityData, apiUniqueID, prodAIRatelimit, sandAIRatelimit)
+	endpointSecurityDataList := []EndpointSecurityConfig{}
 
-	apk.EndpointConfigurations = &endpointRes
+	apiUniqueID := GetUniqueIDForAPI(apiYamlData.Name, apiYamlData.Version, apiYamlData.OrganizationID)
+	logger.LoggerTransformer.Debugf("Maxtps: %+v", apiYamlData)
+	prodAIRatelimit, sandAIRatelimit := prepareAIRatelimit(apiYamlData.MaxTps)
+	endpointRes := EndpointConfigurations{}
+	logger.LoggerTransformer.Debugf("EndpointList len: %d", len(endpointList))
+	if len(endpointList) == 0 {
+		endpointSecurityData := apiYamlData.EndpointConfig.EndpointSecurity
+		endpointRes, endpointSecurityData = getEndpointConfigs(sandboxURL, prodURL, endCertAvailable, endpointCertList, endpointSecurityData, apiUniqueID, prodAIRatelimit, sandAIRatelimit)
+		apk.EndpointConfigurations = &endpointRes
+		endpointSecurityDataList = append(endpointSecurityDataList, endpointSecurityData)
+	} else {
+		mergedEndpointList := append(endpointList, defaultEndpointList...)
+		endpointRes, endpointSecurityDataList = getMultiEndpointConfigs(mergedEndpointList, primaryProdEndpointID, primarySandboxEndpointID, endCertAvailable, endpointCertList, apiUniqueID, prodAIRatelimit, sandAIRatelimit)
+		apk.EndpointConfigurations = &endpointRes
+	}
 
 	//Adding client-certificate configurations to the conf
 	var certList CertDescriptor
@@ -173,7 +242,7 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, organization
 		certErr := json.Unmarshal([]byte(certArtifact.ClientCerts), &certList)
 		if certErr != nil {
 			logger.LoggerTransformer.Errorf("Error while unmarshalling client_cert.json content: %v", apiYamlError)
-			return "", "null", 0, nil, EndpointSecurityConfig{}, nil, nil, nil, certErr
+			return "", "null", 0, nil, []EndpointSecurityConfig{}, nil, nil, nil, certErr
 		}
 		certAvailable = true
 	}
@@ -205,13 +274,13 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, organization
 
 	if marshalError != nil {
 		logger.LoggerTransformer.Error("Error while marshalling apk yaml", marshalError)
-		return "", "null", 0, nil, EndpointSecurityConfig{}, nil, prodAIRatelimit, sandAIRatelimit, marshalError
+		return "", "null", 0, nil, []EndpointSecurityConfig{}, nil, prodAIRatelimit, sandAIRatelimit, marshalError
 	}
-	return string(c), apiYamlData.RevisionedAPIID, apiYamlData.RevisionID, configuredRateLimitPoliciesMap, endpointSecurityData, apk, prodAIRatelimit, sandAIRatelimit, nil
+	return string(c), apiYamlData.RevisionedAPIID, apiYamlData.RevisionID, configuredRateLimitPoliciesMap, endpointSecurityDataList, apk, prodAIRatelimit, sandAIRatelimit, nil
 }
 
 // Generate the interceptor policy if request or response policy exists
-func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []APIMOperationPolicy, resPolicies []APIMOperationPolicy) (*[]OperationPolicy, *[]OperationPolicy) {
+func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []APIMOperationPolicy, resPolicies []APIMOperationPolicy, endpointList []Endpoint, defaultEndpointList []Endpoint) (*[]OperationPolicy, *[]OperationPolicy) {
 	var requestPolicyList, responsePolicyList []OperationPolicy
 	var interceptorParams *InterceptorService
 	var requestInterceptorPolicy, responseInterceptorPolicy, requestBackendJWTPolicy OperationPolicy
@@ -221,7 +290,7 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 	if reqPolicyCount > 0 {
 		for _, reqPolicy := range reqPolicies {
 			logger.LoggerTransformer.Debugf("Request Policy: %v", reqPolicy)
-			if reqPolicy.PolicyName == constants.InterceptorService {
+			if strings.HasSuffix(reqPolicy.PolicyName, constants.InterceptorService) {
 				logger.LoggerTransformer.Debugf("Interceptor Type Request Policy: %v", reqPolicy)
 				logger.LoggerTransformer.Debugf("Interceptor Service URL: %v", reqPolicy.Parameters[interceptorServiceURL])
 				logger.LoggerTransformer.Debugf("Interceptor Includes: %v", reqPolicy.Parameters[includes])
@@ -356,6 +425,90 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 					url := reqPolicyParameters.(string)
 					mirrorUrls = append(mirrorUrls, url)
 				}
+			} else if reqPolicy.PolicyName == constants.ModelRoundRobin || reqPolicy.PolicyName == constants.ModelWeightedRoundRobin {
+				logger.LoggerTransformer.Debugf("ModelRoundRobin Type Request Policy: %v", reqPolicy)
+				modelRoundRobinPolicy := OperationPolicy{
+					PolicyName:    modelBasedRoundRobin,
+					PolicyVersion: v1,
+				}
+				var configs interface{}
+				if reqPolicy.PolicyName == constants.ModelRoundRobin {
+					configs = reqPolicy.Parameters["roundRobinConfigs"]
+				} else if reqPolicy.PolicyName == constants.ModelWeightedRoundRobin {
+					configs = reqPolicy.Parameters["weightedRoundRobinConfigs"]
+				}
+
+				logger.LoggerTransformer.Debugf("Configs: %v", configs)
+				// Convert interface{} to string, then to []byte
+				configStr, ok := configs.(string)
+				if !ok {
+					fmt.Println("Error: expected a JSON string, but got a different type")
+				}
+				// Replace single quotes with double quotes to make valid JSON
+				configStr = strings.ReplaceAll(configStr, "'", "\"")
+				jsonBytes := []byte(configStr)
+				var config Config
+				if err := json.Unmarshal(jsonBytes, &config); err != nil {
+					fmt.Println("Error unmarshalling JSON:", err)
+				}
+				logger.LoggerTransformer.Debugf("Parsed Config: %+v\n", config)
+				parameters := ModelBasedRoundRobin{
+					OnQuotaExceedSuspendDuration: func() int {
+						duration, err := strconv.Atoi(config.SuspendDuration)
+						if err != nil {
+							logger.LoggerTransformer.Errorf("Error while converting SuspendDuration to integer: %v", err)
+							return 0
+						}
+						return duration
+					}(),
+				}
+				var productionModels []ModelEndpoints
+				var sandboxModels []ModelEndpoints
+				var endpointIdtoURL = make(map[string]string)
+				for _, endpoint := range endpointList {
+					if endpoint.EndpointConfig.ProductionEndpoints.URL != "" {
+						endpointIdtoURL[endpoint.ID] = endpoint.EndpointConfig.ProductionEndpoints.URL
+					}
+					if endpoint.EndpointConfig.SandboxEndpoints.URL != "" {
+						endpointIdtoURL[endpoint.ID] = endpoint.EndpointConfig.SandboxEndpoints.URL
+					}
+				}
+				for _, endpoint := range defaultEndpointList {
+					if endpoint.EndpointConfig.ProductionEndpoints.URL != "" {
+						endpointIdtoURL[endpoint.ID] = endpoint.EndpointConfig.ProductionEndpoints.URL
+					}
+					if endpoint.EndpointConfig.SandboxEndpoints.URL != "" {
+						endpointIdtoURL[endpoint.ID] = endpoint.EndpointConfig.SandboxEndpoints.URL
+					}
+				}
+				for _, model := range config.Production {
+					endpointURL := endpointIdtoURL[model.EndpointID]
+					if model.Weight == 0 {
+						model.Weight = 1
+					}
+					modelEndpoints := ModelEndpoints{
+						Model:    model.Model,
+						Weight:   model.Weight,
+						Endpoint: endpointURL,
+					}
+					productionModels = append(productionModels, modelEndpoints)
+				}
+				for _, model := range config.Sandbox {
+					if model.Weight == 0 {
+						model.Weight = 1
+					}
+					endpointURL := endpointIdtoURL[model.EndpointID]
+					modelEndpoints := ModelEndpoints{
+						Model:    model.Model,
+						Weight:   model.Weight,
+						Endpoint: endpointURL,
+					}
+					sandboxModels = append(sandboxModels, modelEndpoints)
+				}
+				parameters.ProductionModels = productionModels
+				parameters.SandboxModels = sandboxModels
+				modelRoundRobinPolicy.Parameters = parameters
+				requestPolicyList = append(requestPolicyList, modelRoundRobinPolicy)
 			}
 		}
 	}
@@ -517,7 +670,7 @@ func prepareAIRatelimit(maxTps *MaxTps) (*AIRatelimit, *AIRatelimit) {
 // getEndpointConfigs will map the endpoints and there security configurations and returns them
 // TODO: Currently the APK-Conf does not support giving multiple certs for a particular endpoint.
 // After fixing this, the following logic should be changed to map multiple cert configs
-func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool, endpointCertList EndpointCertDescriptor, endpointSecurityData EndpointSecurityConfig, apiUniqueID string, prodAIRatelimit *AIRatelimit, sandAIRatelimit *AIRatelimit) EndpointConfigurations {
+func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool, endpointCertList EndpointCertDescriptor, endpointSecurityData EndpointSecurityConfig, apiUniqueID string, prodAIRatelimit *AIRatelimit, sandAIRatelimit *AIRatelimit) (EndpointConfigurations, EndpointSecurityConfig) {
 	var sandboxEndpointConf, prodEndpointConf EndpointConfiguration
 	var sandBoxEndpointEnabled = false
 	var prodEndpointEnabled = false
@@ -553,17 +706,18 @@ func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool
 	}
 
 	if endpointSecurityData.Sandbox.Enabled {
+		endpointSecurityData.Sandbox.EndpointUUID = "primary"
 		sandboxEndpointConf.EndSecurity.Enabled = true
 		if endpointSecurityData.Sandbox.Type == "apikey" {
 			sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:     strings.Join([]string{apiUniqueID, "sandbox", "secret"}, "-"),
+				SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Sandbox.EndpointUUID), "sandbox", "secret"}, "-"),
 				In:             "Header",
 				APIKeyNameKey:  endpointSecurityData.Sandbox.APIKeyIdentifier,
 				APIKeyValueKey: "apiKey",
 			}
 		} else {
 			sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:  strings.Join([]string{apiUniqueID, "sandbox", "secret"}, "-"),
+				SecretName:  strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Sandbox.EndpointUUID), "sandbox", "secret"}, "-"),
 				UsernameKey: "username",
 				PasswordKey: "password",
 			}
@@ -571,17 +725,18 @@ func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool
 	}
 
 	if endpointSecurityData.Production.Enabled {
+		endpointSecurityData.Production.EndpointUUID = "primary"
 		prodEndpointConf.EndSecurity.Enabled = true
 		if endpointSecurityData.Production.Type == "apikey" {
 			prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:     strings.Join([]string{apiUniqueID, "production", "secret"}, "-"),
+				SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Production.EndpointUUID), "production", "secret"}, "-"),
 				In:             "Header",
 				APIKeyNameKey:  endpointSecurityData.Production.APIKeyIdentifier,
 				APIKeyValueKey: "apiKey",
 			}
 		} else {
 			prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
-				SecretName:  strings.Join([]string{apiUniqueID, "production", "secret"}, "-"),
+				SecretName:  strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Production.EndpointUUID), "production", "secret"}, "-"),
 				UsernameKey: "username",
 				PasswordKey: "password",
 			}
@@ -589,21 +744,142 @@ func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool
 	}
 
 	epconfigs := EndpointConfigurations{}
+	sandboxEndpoints := []EndpointConfiguration{}
+	productionEndpoints := []EndpointConfiguration{}
 	if sandBoxEndpointEnabled && prodEndpointEnabled {
+		sandboxEndpoints = append(sandboxEndpoints, sandboxEndpointConf)
+		productionEndpoints = append(productionEndpoints, prodEndpointConf)
 		epconfigs = EndpointConfigurations{
-			Sandbox:    &sandboxEndpointConf,
-			Production: &prodEndpointConf,
+			Sandbox:    &sandboxEndpoints,
+			Production: &productionEndpoints,
 		}
 	} else if sandBoxEndpointEnabled {
+		sandboxEndpoints = append(sandboxEndpoints, sandboxEndpointConf)
 		epconfigs = EndpointConfigurations{
-			Sandbox: &sandboxEndpointConf,
+			Sandbox: &sandboxEndpoints,
 		}
 	} else if prodEndpointEnabled {
+		productionEndpoints = append(productionEndpoints, prodEndpointConf)
 		epconfigs = EndpointConfigurations{
-			Production: &prodEndpointConf,
+			Production: &productionEndpoints,
 		}
 	}
-	return epconfigs
+	return epconfigs, endpointSecurityData
+}
+
+// getMultiEndpointConfigs will map the endpoints and there security configurations and returns them
+func getMultiEndpointConfigs(endpointList []Endpoint, primaryProdEndpointID string, primarySandboxEndpointID string, endCertAvailable bool, endpointCertList EndpointCertDescriptor, apiUniqueID string, prodAIRatelimit *AIRatelimit, sandAIRatelimit *AIRatelimit) (EndpointConfigurations, []EndpointSecurityConfig) {
+	sandboxEndpoints := []EndpointConfiguration{}
+	productionEndpoints := []EndpointConfiguration{}
+	endpointSecurityConfigs := []EndpointSecurityConfig{}
+	if primaryProdEndpointID == "" && primarySandboxEndpointID == "" {
+		logger.LoggerTransformer.Error("Primary Production and Sandbox Endpoint ID's are empty. Unable to map the endpoints.")
+	}
+	for _, endpoint := range endpointList {
+		prodURL := endpoint.EndpointConfig.ProductionEndpoints.URL
+		sandboxURL := endpoint.EndpointConfig.SandboxEndpoints.URL
+		endpointSecurityData := endpoint.EndpointConfig.EndpointSecurity
+		endpointSecurityData.Production.EndpointUUID = endpoint.ID
+		endpointSecurityData.Sandbox.EndpointUUID = endpoint.ID
+		endpointSecurityConfigs = append(endpointSecurityConfigs, endpointSecurityData)
+		var sandboxEndpointConf, prodEndpointConf EndpointConfiguration
+		var sandBoxEndpointEnabled = false
+		var prodEndpointEnabled = false
+		if sandboxURL != "" {
+			sandBoxEndpointEnabled = true
+		}
+		if prodURL != "" {
+			prodEndpointEnabled = true
+		}
+		if prodAIRatelimit != nil {
+			prodEndpointConf.AIRatelimit = *prodAIRatelimit
+		}
+		if sandAIRatelimit != nil {
+			sandboxEndpointConf.AIRatelimit = *sandAIRatelimit
+		}
+		sandboxEndpointConf.Endpoint = sandboxURL
+		prodEndpointConf.Endpoint = prodURL
+		if endCertAvailable {
+			for _, endCert := range endpointCertList.EndpointCertData {
+				if endCert.Endpoint == sandboxURL {
+					sandboxEndpointConf.EndCertificate = EndpointCertificate{
+						Name: endCert.Alias,
+						Key:  endCert.Certificate,
+					}
+				}
+				if endCert.Endpoint == prodURL {
+					prodEndpointConf.EndCertificate = EndpointCertificate{
+						Name: endCert.Alias,
+						Key:  endCert.Certificate,
+					}
+				}
+			}
+		}
+
+		if endpointSecurityData.Sandbox.Enabled {
+			sandboxEndpointConf.EndSecurity.Enabled = true
+
+			if endpointSecurityData.Sandbox.Type == "apikey" {
+				sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
+					SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpoint.ID), "sandbox", "secret"}, "-"),
+					In:             "Header",
+					APIKeyNameKey:  endpointSecurityData.Sandbox.APIKeyIdentifier,
+					APIKeyValueKey: "apiKey",
+				}
+			} else {
+				sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
+					SecretName:  strings.Join([]string{apiUniqueID, generateSHA1Hash(endpoint.ID), "sandbox", "secret"}, "-"),
+					UsernameKey: "username",
+					PasswordKey: "password",
+				}
+			}
+		}
+
+		if endpointSecurityData.Production.Enabled {
+			prodEndpointConf.EndSecurity.Enabled = true
+			if endpointSecurityData.Production.Type == "apikey" {
+				prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
+					SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpoint.ID), "production", "secret"}, "-"),
+					In:             "Header",
+					APIKeyNameKey:  endpointSecurityData.Production.APIKeyIdentifier,
+					APIKeyValueKey: "apiKey",
+				}
+			} else {
+				prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
+					SecretName:  strings.Join([]string{apiUniqueID, generateSHA1Hash(endpoint.ID), "production", "secret"}, "-"),
+					UsernameKey: "username",
+					PasswordKey: "password",
+				}
+			}
+		}
+
+		if sandBoxEndpointEnabled && prodEndpointEnabled {
+			logger.LoggerTransformer.Debugf("Sandbox/Prod both Endpoints Enabled: %v", sandBoxEndpointEnabled)
+			sandboxEndpoints = append(sandboxEndpoints, sandboxEndpointConf)
+			productionEndpoints = append(productionEndpoints, prodEndpointConf)
+		} else if sandBoxEndpointEnabled {
+			logger.LoggerTransformer.Debugf("Sandbox Endpoint Enabled: %v", sandBoxEndpointEnabled)
+			sandboxEndpoints = append(sandboxEndpoints, sandboxEndpointConf)
+		} else if prodEndpointEnabled {
+			logger.LoggerTransformer.Debugf("Production Endpoint Enabled: %v", prodEndpointEnabled)
+			productionEndpoints = append(productionEndpoints, prodEndpointConf)
+		}
+	}
+	logger.LoggerTransformer.Debugf("Sandbox Endpoints: %v", sandboxEndpoints)
+	logger.LoggerTransformer.Debugf("Production Endpoints: %v", productionEndpoints)
+	epconfigs := EndpointConfigurations{
+		Sandbox:    &sandboxEndpoints,
+		Production: &productionEndpoints,
+	}
+	logger.LoggerTransformer.Debugf("Endpoint Configurations: %v", epconfigs)
+	return epconfigs, endpointSecurityConfigs
+}
+
+// generateSHA1Hash returns the SHA1 hash for the given string
+func generateSHA1Hash(input string) string {
+	h := sha1.New() /* #nosec */
+	h.Write([]byte(input))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // mapAuthConfigs will take the security schemes as the parameter and will return the mapped auth configs to be
