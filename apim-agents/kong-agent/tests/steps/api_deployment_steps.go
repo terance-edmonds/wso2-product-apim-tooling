@@ -835,6 +835,7 @@ func deleteThrottlingPolicy(ctx *utils.SharedContext) error {
 
 	ctx.SetResponse(httpResponse)
 	responseBody, err := utils.ResponseEntityBodyToString(httpResponse)
+
 	if err != nil {
 		return fmt.Errorf("error reading response body: %v", err)
 	}

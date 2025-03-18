@@ -59,6 +59,7 @@ Feature: Testing Ratelimit feature
     Then I find the apiUUID of the API created with the name "SimpleRateLimitAPI"
     Then I undeploy the selected API
     Then the response status code should be 200
+    Then I wait for 10 seconds
     And I send "GET" request to "https://default.gw.wso2.com:8443/simple-rl/3.14/employee/" with body ""
     Then the response status code should be 404
     And I send "GET" request to "https://sandbox.default.gw.wso2.com:8443/simple-rl/3.14/employee/" with body ""
