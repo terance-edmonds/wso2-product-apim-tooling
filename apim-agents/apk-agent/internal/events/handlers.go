@@ -30,14 +30,16 @@ import (
 	eventConstants "github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/constants"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/eventhub/types"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/logging"
-	"github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
+	mgtServer "github.com/wso2/product-apim-tooling/apim-agent/pkg/managementserver"
 	msg "github.com/wso2/product-apim-tooling/apim-agent/pkg/messaging"
 	"github.com/wso2/product-apim-tooling/apim-agent/pkg/utils"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/eventhub"
 	internalk8sClient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
 	k8sclient "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/k8sClient"
 	logger "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/loggers"
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/synchronizer"
 	internalutils "github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/utils"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/managementserver"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -269,14 +271,14 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 	applicationMapping := event.ApplicationMapping{Uuid: utils.GetUniqueIDOfApplicationMapping(subscriptionEvent.ApplicationUUID, subscriptionEvent.SubscriptionUUID), ApplicationRef: subscriptionEvent.ApplicationUUID, SubscriptionRef: subscriptionEvent.SubscriptionUUID, Organization: subscriptionEvent.TenantDomain}
 	if subscriptionEvent.Event.Type == eventConstants.SubscriptionCreate {
 		subsEvent := event.Event{Uuid: uuid.New().String(), Type: constants.SubscriptionCreated, TimeStamp: subscriptionEvent.TimeStamp, Subscription: &subscription}
-		managementserver.AddSubscription(managementserver.Subscription{UUID: subscription.Uuid, SubStatus: subscription.SubStatus, Organization: subscription.Organization, RateLimit: subscription.RatelimitTier, SubscribedAPI: &managementserver.SubscribedAPI{Name: subscription.SubscribedApi.Name, Version: subscription.SubscribedApi.Version}})
+		mgtServer.AddSubscription(mgtServer.Subscription{UUID: subscription.Uuid, SubStatus: subscription.SubStatus, Organization: subscription.Organization, RateLimit: subscription.RatelimitTier, SubscribedAPI: &mgtServer.SubscribedAPI{Name: subscription.SubscribedApi.Name, Version: subscription.SubscribedApi.Version}})
 		go utils.SendEvent(&subsEvent)
 		applicationMappingEvent := event.Event{Uuid: utils.GetUniqueIDOfApplicationMapping(subscriptionEvent.ApplicationUUID, subscriptionEvent.SubscriptionUUID), Type: constants.ApplicationMappingCreated, TimeStamp: subscriptionEvent.TimeStamp, ApplicationMapping: &applicationMapping}
 		managementserver.AddApplicationMapping(managementserver.ApplicationMapping{UUID: applicationMapping.Uuid, ApplicationRef: applicationMapping.ApplicationRef, SubscriptionRef: applicationMapping.SubscriptionRef, Organization: applicationMapping.Organization})
 		go utils.SendEvent(&applicationMappingEvent)
 	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionUpdate {
 		subsEvent := event.Event{Uuid: uuid.New().String(), Type: constants.SubscriptionUpdated, TimeStamp: subscriptionEvent.TimeStamp, Subscription: &subscription}
-		managementserver.UpdateSubscription(subscription.Uuid, managementserver.Subscription{UUID: subscription.Uuid, SubStatus: subscription.SubStatus, Organization: subscription.Organization, RateLimit: subscription.RatelimitTier, SubscribedAPI: &managementserver.SubscribedAPI{Name: subscription.SubscribedApi.Name, Version: subscription.SubscribedApi.Version}})
+		mgtServer.UpdateSubscription(subscription.Uuid, mgtServer.Subscription{UUID: subscription.Uuid, SubStatus: subscription.SubStatus, Organization: subscription.Organization, RateLimit: subscription.RatelimitTier, SubscribedAPI: &mgtServer.SubscribedAPI{Name: subscription.SubscribedApi.Name, Version: subscription.SubscribedApi.Version}})
 		go utils.SendEvent(&subsEvent)
 		applicationMappingEvent := event.Event{Uuid: utils.GetUniqueIDOfApplicationMapping(subscriptionEvent.ApplicationUUID, subscriptionEvent.SubscriptionUUID), Type: constants.ApplicationMappingUpdated, TimeStamp: subscriptionEvent.TimeStamp, ApplicationMapping: &applicationMapping}
 		managementserver.UpdateApplicationMapping(applicationMappingEvent.Uuid, managementserver.ApplicationMapping{UUID: applicationMappingEvent.Uuid, ApplicationRef: applicationMapping.ApplicationRef, SubscriptionRef: applicationMapping.SubscriptionRef, Organization: applicationMapping.Organization})
@@ -284,7 +286,7 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 
 	} else if subscriptionEvent.Event.Type == eventConstants.SubscriptionDelete {
 		subsEvent := event.Event{Uuid: uuid.New().String(), Type: constants.SubscriptionDeleted, TimeStamp: subscriptionEvent.TimeStamp, Subscription: &subscription}
-		managementserver.DeleteSubscription(subscription.Uuid)
+		mgtServer.DeleteSubscription(subscription.Uuid)
 		go utils.SendEvent(&subsEvent)
 		applicationMappingEvent := event.Event{Uuid: utils.GetUniqueIDOfApplicationMapping(subscriptionEvent.ApplicationUUID, subscriptionEvent.SubscriptionUUID), Type: constants.ApplicationMappingDeleted, TimeStamp: subscriptionEvent.TimeStamp, ApplicationMapping: &applicationMapping}
 		managementserver.DeleteApplicationMapping(applicationMappingEvent.Uuid)
@@ -305,45 +307,45 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
 			synchronizer.FetchRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c)
-			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			ratelimitPolicies := mgtServer.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		} else if strings.EqualFold(policyEvent.PolicyType, "SUBSCRIPTION") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
 			synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c, false)
-			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			ratelimitPolicies := mgtServer.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		}
 	} else if strings.EqualFold(eventType, eventConstants.PolicyUpdate) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s for tenant: %s", policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
 			synchronizer.FetchRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c)
-			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			ratelimitPolicies := mgtServer.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		} else if strings.EqualFold(policyEvent.PolicyType, "SUBSCRIPTION") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
 			synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c, false)
-			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			ratelimitPolicies := mgtServer.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		}
 	} else if strings.EqualFold(eventType, eventConstants.PolicyDelete) {
 		if strings.EqualFold(policyEvent.PolicyType, "API") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
-			managementserver.DeleteRateLimitPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
-			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			mgtServer.DeleteRateLimitPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
+			ratelimitPolicies := mgtServer.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		} else if strings.EqualFold(policyEvent.PolicyType, "SUBSCRIPTION") {
 			logger.LoggerMessaging.Infof("Policy: %s for policy type: %s", policyEvent.PolicyName, policyEvent.PolicyType)
-			managementserver.DeleteSubscriptionPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
+			mgtServer.DeleteSubscriptionPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
 			crName := k8sclient.PrepareSubscritionPolicyCRName(policyEvent.PolicyName, policyEvent.TenantDomain)
 			k8sclient.UnDeploySubscriptionRateLimitPolicyCR(crName, c)
 			k8sclient.UndeploySubscriptionAIRateLimitPolicyCR(crName, c)
-			ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
+			ratelimitPolicies := mgtServer.GetAllRateLimitPolicies()
 			logger.LoggerMessaging.Infof("Rate Limit Policies Internal Map: %v", ratelimitPolicies)
 		}
 	}
 
 	if strings.EqualFold(eventConstants.ApplicationEventType, policyEvent.PolicyType) {
-		applicationPolicy := types.ApplicationPolicy{ID: policyEvent.PolicyID, TenantID: policyEvent.Event.TenantID,
+		applicationPolicy := eventhub.ApplicationPolicy{ID: policyEvent.PolicyID, TenantID: policyEvent.Event.TenantID,
 			Name: policyEvent.PolicyName, QuotaType: policyEvent.QuotaType}
 
 		logger.LoggerMessaging.Infof("ApplicationPolicy event data %v", applicationPolicy)
@@ -406,19 +408,19 @@ func HandleAIProviderEvents(data []byte, eventType string, c client.Client) {
 	if strings.EqualFold(eventConstants.AIProviderCreate, eventType) {
 		logger.LoggerMessaging.Infof("Create for AI Provider: %s for tenant: %s", aiProviderEvent.Name, aiProviderEvent.Event.TenantDomain)
 		synchronizer.FetchAIProvidersOnEvent(aiProviderEvent.Name, aiProviderEvent.APIVersion, aiProviderEvent.Event.TenantDomain, c, false)
-		aiProviders := managementserver.GetAllAIProviders()
+		aiProviders := mgtServer.GetAllAIProviders()
 		logger.LoggerMessaging.Debugf("AI Providers Internal Map: %v", aiProviders)
 	} else if strings.EqualFold(eventConstants.AIProviderUpdate, eventType) {
 		logger.LoggerMessaging.Infof("Update for AI Provider: %s for tenant: %s", aiProviderEvent.Name, aiProviderEvent.Event.TenantDomain)
 		synchronizer.FetchAIProvidersOnEvent(aiProviderEvent.Name, aiProviderEvent.APIVersion, aiProviderEvent.Event.TenantDomain, c, false)
-		aiProviders := managementserver.GetAllAIProviders()
+		aiProviders := mgtServer.GetAllAIProviders()
 		logger.LoggerMessaging.Debugf("AI Providers Internal Map: %v", aiProviders)
 	} else if strings.EqualFold(eventConstants.AIProviderDelete, eventType) {
 		logger.LoggerMessaging.Infof("Deletion for AI Provider: %s for tenant: %s", aiProviderEvent.Name, aiProviderEvent.Event.TenantDomain)
-		aiProvider := managementserver.GetAIProvider(aiProviderEvent.ID)
+		aiProvider := mgtServer.GetAIProvider(aiProviderEvent.ID)
 		k8sclient.DeleteAIProviderCR(aiProvider.ID, c)
-		managementserver.DeleteAIProvider(aiProviderEvent.ID)
-		aiProviders := managementserver.GetAllAIProviders()
+		mgtServer.DeleteAIProvider(aiProviderEvent.ID)
+		aiProviders := mgtServer.GetAllAIProviders()
 		logger.LoggerMessaging.Debugf("AI Providers Internal Map: %v", aiProviders)
 	}
 }

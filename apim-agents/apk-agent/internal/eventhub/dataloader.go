@@ -56,8 +56,8 @@ var (
 	// This set of variables are used just for Type resolution with reflect.
 	// Hence no value needs to be assigned.
 	subList           *types.SubscriptionList
-	appList           *types.ApplicationList
-	appKeyMappingList *types.ApplicationKeyMappingList
+	appList           *ApplicationList
+	appKeyMappingList *ApplicationKeyMappingList
 
 	resources = []resource{
 		{
@@ -215,13 +215,13 @@ func retrieveDataFromResponseChannel(response response) {
 			logger.LoggerEventhub.Info("Received Subscription information.")
 			subList := newResponse.(*types.SubscriptionList)
 			MarshalMultipleSubscriptions(subList)
-		case *types.ApplicationList:
+		case *ApplicationList:
 			logger.LoggerEventhub.Info("Received Application information.")
-			appList := newResponse.(*types.ApplicationList)
+			appList := newResponse.(*ApplicationList)
 			MarshalMultipleApplications(appList)
-		case *types.ApplicationKeyMappingList:
+		case *ApplicationKeyMappingList:
 			logger.LoggerEventhub.Info("Received Application Key Mapping information.")
-			appKeyMappingList := newResponse.(*types.ApplicationKeyMappingList)
+			appKeyMappingList := newResponse.(*ApplicationKeyMappingList)
 			MarshalMultipleApplicationKeyMappings(appKeyMappingList)
 		default:
 			logger.LoggerEventhub.Debugf("Unknown type %T", t)

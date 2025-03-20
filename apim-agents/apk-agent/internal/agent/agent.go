@@ -19,6 +19,8 @@
 package agent
 
 import (
+	"flag"
+
 	cpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/cp/v1alpha2"
 	dpv1alpha1 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha1"
 	dpv1alpha2 "github.com/wso2/apk/common-go-libs/apis/dp/v1alpha2"
@@ -27,10 +29,19 @@ import (
 	"github.com/wso2/product-apim-tooling/apim-agent/config"
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/eventhub"
 	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/internal/synchronizer"
+	"github.com/wso2/product-apim-tooling/apim-agents/apk-agent/pkg/managementserver"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
+
+var (
+	restPort uint
+)
+
+func init() {
+	flag.UintVar(&restPort, "rest_port", 18001, "Rest server port")
+}
 
 // PreRun prepares the agent environment and runs before Run.
 func PreRun(conf *config.Config, scheme *runtime.Scheme) {
@@ -46,6 +57,8 @@ func PreRun(conf *config.Config, scheme *runtime.Scheme) {
 // Run starts the GRPC server and Rest API server.
 func Run(conf *config.Config, mgr manager.Manager) {
 	AgentMode := conf.Agent.Mode
+
+	go managementserver.StartInternalServer(restPort)
 
 	if AgentMode == "CPtoDP" {
 		// Load initial Policy data from control plane
