@@ -40,42 +40,6 @@ type SubscriptionList struct {
 	List []Subscription `json:"list"`
 }
 
-// Application for struct application
-type Application struct {
-	UUID         string            `json:"uuid"`
-	ID           int32             `json:"id" json:"applicationId"`
-	Name         string            `json:"name" json:"applicationName"`
-	SubName      string            `json:"subName" json:"subscriber"`
-	Policy       string            `json:"policy" json:"applicationPolicy"`
-	TokenType    string            `json:"tokenType"`
-	Attributes   map[string]string `json:"attributes"`
-	TenantID     int32             `json:"tenanId,omitempty"`
-	Organization string            `json:"organization,omitempty"`
-	TimeStamp    int64             `json:"timeStamp,omitempty"`
-}
-
-// ApplicationList for struct list of application
-type ApplicationList struct {
-	List []Application `json:"list"`
-}
-
-// ApplicationKeyMapping for struct applicationKeyMapping
-type ApplicationKeyMapping struct {
-	ApplicationID   int32  `json:"applicationId"`
-	ApplicationUUID string `json:"applicationUUID"`
-	ConsumerKey     string `json:"consumerKey"`
-	KeyType         string `json:"keyType"`
-	KeyManager      string `json:"keyManager"`
-	TenantID        int32  `json:"tenanId,omitempty"`
-	TenantDomain    string `json:"tenanDomain,omitempty"`
-	TimeStamp       int64  `json:"timeStamp,omitempty"`
-}
-
-// ApplicationKeyMappingList for struct list of applicationKeyMapping
-type ApplicationKeyMappingList struct {
-	List []ApplicationKeyMapping `json:"list"`
-}
-
 // API for struct Api
 type API struct {
 	APIID            int    `json:"apiId"`
@@ -96,19 +60,6 @@ type API struct {
 // APIList for struct ApiList
 type APIList struct {
 	List []API `json:"list"`
-}
-
-// ApplicationPolicy for struct ApplicationPolicy
-type ApplicationPolicy struct {
-	ID        int32  `json:"id"`
-	TenantID  int32  `json:"tenantId"`
-	Name      string `json:"name"`
-	QuotaType string `json:"quotaType"`
-}
-
-// ApplicationPolicyList for struct list of ApplicationPolicy
-type ApplicationPolicyList struct {
-	List []ApplicationPolicy `json:"list"`
 }
 
 // SubscriptionPolicy for struct list of SubscriptionPolicy
@@ -157,17 +108,6 @@ type Fields struct {
 	AttributeName       string `json:"attributeName"`
 	InputSource         string `json:"inputSource"`
 	AttributeIdentifier string `json:"attributeIdentifier"`
-}
-
-// APIPolicyEvent for struct policy Info events
-type APIPolicyEvent struct {
-	PolicyID                 string `json:"policyId"`
-	PolicyName               string `json:"policyName"`
-	QuotaType                string `json:"quotaType"`
-	PolicyType               string `json:"policyType"`
-	AddedConditionGroupIDs   string `json:"addedConditionGroupIDs"`
-	DeletedConditionGroupIDs string `json:"deletedConditionGroupIDs"`
-	TimeStamp                int64  `json:"timeStamp,omitempty"`
 }
 
 // RateLimitPolicyList for struct list of RateLimitPolicy

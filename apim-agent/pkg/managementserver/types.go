@@ -38,72 +38,12 @@ type SubscribedAPI struct {
 	Version string `json:"version,omitempty"`
 }
 
-// Application for struct application
-type Application struct {
-	UUID         string            `json:"uuid,omitempty"`
-	Name         string            `json:"name,omitempty"`
-	Owner        string            `json:"owner,omitempty"`
-	Organization string            `json:"organization,omitempty"`
-	Attributes   map[string]string `json:"attributes,omitempty"`
-	TimeStamp    int64             `json:"timeStamp,omitempty"`
-}
-
-// ApplicationList for struct list of application
-type ApplicationList struct {
-	List []Application `json:"list"`
-}
-
-// ResolvedApplicationList for struct list of resolved application
-type ResolvedApplicationList struct {
-	List []ResolvedApplication `json:"list"`
-}
-
-// ResolvedApplication for struct resolvedApplication
-type ResolvedApplication struct {
-	UUID            string            `json:"uuid,omitempty"`
-	Name            string            `json:"name,omitempty"`
-	Owner           string            `json:"owner,omitempty"`
-	Organization    string            `json:"organization,omitempty"`
-	Attributes      map[string]string `json:"attributes,omitempty"`
-	TimeStamp       int64             `json:"timeStamp,omitempty"`
-	SecuritySchemes []SecurityScheme  `json:"securitySchemes,omitempty"`
-}
-
 // SecurityScheme for struct securityScheme
 type SecurityScheme struct {
 	SecurityScheme        string `json:"securityScheme,omitempty"`
 	ApplicationIdentifier string `json:"applicationIdentifier,omitempty"`
 	KeyType               string `json:"keyType,omitempty"`
 	EnvID                 string `json:"envID,omitempty"`
-}
-
-// ApplicationKeyMapping for struct applicationKeyMapping
-type ApplicationKeyMapping struct {
-	ApplicationUUID       string `json:"applicationUUID,omitempty"`
-	SecurityScheme        string `json:"securityScheme,omitempty"`
-	ApplicationIdentifier string `json:"applicationIdentifier,omitempty"`
-	KeyType               string `json:"keyType,omitempty"`
-	EnvID                 string `json:"envID,omitempty"`
-	Timestamp             int64  `json:"timestamp,omitempty"`
-	Organization          string `json:"organization,omitempty"`
-}
-
-// ApplicationKeyMappingList for struct list of applicationKeyMapping
-type ApplicationKeyMappingList struct {
-	List []ApplicationKeyMapping `json:"list"`
-}
-
-// ApplicationMapping for struct applicationMapping
-type ApplicationMapping struct {
-	UUID            string `json:"uuid,omitempty"`
-	ApplicationRef  string `json:"applicationRef,omitempty"`
-	SubscriptionRef string `json:"subscriptionRef,omitempty"`
-	Organization    string `json:"organization,omitempty"`
-}
-
-// ApplicationMappingList for struct list of applicationMapping
-type ApplicationMappingList struct {
-	List []ApplicationMapping `json:"list"`
 }
 
 // APICPEvent holds data of a specific API event from adapter
@@ -336,4 +276,118 @@ type CORSPolicy struct {
 	AccessControlExposeHeaders    []string `json:"accessControlExposeHeaders,omitempty"`
 	AccessControlMaxAge           *int     `json:"accessControlMaxAge,omitempty"`
 	AccessControlAllowMethods     []string `json:"accessControlAllowMethods,omitempty"`
+}
+
+// APIOperation represents the desired struct format for each API operation
+type APIOperation struct {
+	ID                string            `yaml:"id"`
+	Target            string            `yaml:"target"`
+	Verb              string            `yaml:"verb"`
+	AuthType          string            `yaml:"authType"`
+	ThrottlingPolicy  string            `yaml:"throttlingPolicy"`
+	Scopes            []string          `yaml:"scopes"`
+	UsedProductIDs    []string          `yaml:"usedProductIds"`
+	OperationPolicies OperationPolicies `yaml:"operationPolicies"`
+}
+
+// OperationPolicies contains the request, response and fault policies for an operation
+type OperationPolicies struct {
+	Request  []OperationPolicy `yaml:"request"`
+	Response []OperationPolicy `yaml:"response"`
+	Fault    []string          `yaml:"fault"`
+}
+
+// OperationPolicy represents the desired struct format for an Operation Policy
+type OperationPolicy struct {
+	PolicyName    string           `yaml:"policyName"`
+	PolicyVersion string           `yaml:"policyVersion"`
+	PolicyID      string           `yaml:"policyId,omitempty"`
+	PolicyType    string           `yaml:"policyType,omitempty"`
+	Parameters    FilterParameters `yaml:"parameters"`
+}
+
+// FilterParameters interface is used to define the type of parameters that can be used in an operation policy.
+type FilterParameters interface {
+	isFilterParameters()
+}
+
+func (m WeightedRoundRobinConfigs) isFilterParameters() {}
+
+// WeightedRoundRobinConfigs holds any additional parameter data for a RequestPolicy
+type WeightedRoundRobinConfigs struct {
+	WeightedRoundRobinConfigs string `yaml:"weightedRoundRobinConfigs"`
+}
+
+func (m ModelBasedRoundRobinConfig) isFilterParameters() {}
+
+// ModelConfig holds the configuration details of a model
+type ModelConfig struct {
+	Model      string `json:"model" yaml:"model"`
+	EndpointID string `json:"endpointId" yaml:"endpointId"`
+	Weight     int    `json:"weight" yaml:"weight"`
+}
+
+// ModelBasedRoundRobinConfig holds the configuration details of the transformer
+type ModelBasedRoundRobinConfig struct {
+	Production      []ModelConfig `json:"production" yaml:"production"`
+	Sandbox         []ModelConfig `json:"sandbox" yaml:"sandbox"`
+	SuspendDuration string        `json:"suspendDuration" yaml:"suspendDuration"`
+}
+
+func (h Header) isFilterParameters() {}
+
+// Header contains the request and response header modifier information
+type Header struct {
+	Name  string `json:"headerName" yaml:"headerName"`
+	Value string `json:"headerValue,omitempty" yaml:"headerValue,omitempty"`
+}
+
+// RedirectRequest contains the url to send the redirected request
+type RedirectRequest struct {
+	URL string `json:"url"`
+}
+
+func (r RedirectRequest) isFilterParameters() {}
+
+// MirrorRequest contains the url to mirror the request to
+type MirrorRequest struct {
+	URL string `json:"url"`
+}
+
+func (m MirrorRequest) isFilterParameters() {}
+
+// OpenAPIPaths represents the structure of the OpenAPI specification YAML file
+type OpenAPIPaths struct {
+	Paths map[string]map[string]interface{} `yaml:"paths"`
+}
+
+// Operation represents the structure of an operation within the OpenAPI specification
+type Operation struct {
+	XAuthType        string `yaml:"x-auth-type"`
+	XThrottlingTier  string `yaml:"x-throttling-tier"`
+	XWSO2AppSecurity struct {
+		SecurityTypes []string `yaml:"security-types"`
+		Optional      bool     `yaml:"optional"`
+	} `yaml:"x-wso2-application-security"`
+}
+
+// AdditionalProperty represents additional properties of the API
+type AdditionalProperty struct {
+	Name    string
+	Value   string
+	Display bool
+}
+
+// ScopeWrapper to hold scope sonfigs
+type ScopeWrapper struct {
+	Scope  Scope `yaml:"scope"`
+	Shared bool  `yaml:"shared"`
+}
+
+// Scope to hold scope config
+type Scope struct {
+	Name        string   `yaml:"name"`
+	DisplayName string   `yaml:"displayName"`
+	Description string   `yaml:"description"`
+	Bindings    []string `yaml:"bindings"`
 }

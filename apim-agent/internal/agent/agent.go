@@ -56,9 +56,8 @@ var (
 	debug       bool
 	onlyLogging bool
 
-	port     uint
-	alsPort  uint
-	restPort uint
+	port    uint
+	alsPort uint
 
 	mode string
 )
@@ -75,7 +74,6 @@ func init() {
 	flag.UintVar(&port, "port", 18000, "Management server port")
 	flag.UintVar(&alsPort, "als", 18090, "Accesslog server port")
 	flag.StringVar(&mode, "ads", ads, "Management server type (ads, grpc, rest)")
-	flag.UintVar(&restPort, "rest_port", 18001, "Rest server port")
 }
 
 // Run starts the Event listener and gateway agent.
@@ -205,8 +203,6 @@ func Run(conf *config.Config) {
 	// register health service
 	healthservice.RegisterHealthServer(grpcServer, &health.Server{})
 	logger.LoggerAgent.Info("port: ", port, " APK agent Listening for gRPC connections")
-
-	go managementserver.StartInternalServer(restPort)
 
 	go func() {
 		logger.LoggerAgent.Info("Starting GRPC server.")

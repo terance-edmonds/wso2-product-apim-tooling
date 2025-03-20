@@ -183,13 +183,6 @@ type AIProviderEvent struct {
 	Event
 }
 
-// APIPolicyEvent for struct API policy events
-type APIPolicyEvent struct {
-	PolicyInfo
-	AddedConditionGroupIDs   string `json:"addedConditionGroupIds"`
-	DeletedConditionGroupIDs string `json:"deletedConditionGroupIds"`
-}
-
 // SubscriptionPolicyEvent for struct subscriptionPolicy events
 type SubscriptionPolicyEvent struct {
 	PolicyInfo
@@ -198,34 +191,4 @@ type SubscriptionPolicyEvent struct {
 	StopOnQuotaReach     bool   `json:"stopOnQuotaReach"`
 	GraphQLMaxComplexity int32  `json:"graphQLMaxComplexity"`
 	GraphQLMaxDepth      int32  `json:"graphQLMaxDepth"`
-}
-
-// KeyManagerEvent for struct
-type KeyManagerEvent struct {
-	ServerURL                  string   `json:"ServerURL"`
-	ValidationEnable           bool     `json:"validation_enable"`
-	ClaimMappings              []Claim  `json:"Claim"`
-	GrantTypes                 []string `json:"grant_types"`
-	EncryptPersistedTokens     bool     `json:"OAuthConfigurations.EncryptPersistedTokens"`
-	EnableOauthAppCreation     bool     `json:"enable_oauth_app_creation"`
-	ValidityPeriod             string   `json:"VALIDITY_PERIOD"`
-	CertificateValue           string   `json:"certificate_value"`
-	EnableTokenGeneration      bool     `json:"enable_token_generation"`
-	Issuer                     string   `json:"issuer"`
-	EnableMapOauthConsumerApps bool     `json:"enable_map_oauth_consumer_apps"`
-	EnableTokenHash            bool     `json:"enable_token_hash"`
-	SelfValidateJwt            bool     `json:"self_validate_jwt"`
-	RevokeEndpoint             string   `json:"revoke_endpoint"`
-	EnableTokenEncryption      bool     `json:"enable_token_encryption"`
-	RevokeURL                  string   `json:"RevokeURL"`
-	TokenURL                   string   `json:"TokenURL"`
-	TokenFormatString          string   `json:"token_format_string"`
-	CertificateType            string   `json:"certificate_type"`
-	TokenEndpoint              string   `json:"token_endpoint"`
-}
-
-// Claim for struct
-type Claim struct {
-	remoteClaim string
-	localClaim  string
 }

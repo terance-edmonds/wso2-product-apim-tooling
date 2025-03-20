@@ -36,7 +36,6 @@ var (
 
 // Service components to be set health status
 const (
-	RestService                 service = "apk.apim.agent.internal.RestService"
 	NotificationListenerService service = "apk.apim.agent.internal.NotificationListenerService"
 	CommonControllerGrpcService service = "apk.apim.agent.internal.CommonControllerGrpcService"
 )
@@ -69,24 +68,24 @@ func (s Server) Check(ctx context.Context, request *healthservice.HealthCheckReq
 		}
 
 		if isHealthy {
-			logger.LoggerHealth.Debug("Responding health state of APIM APK Agent as HEALTHY")
+			logger.LoggerHealth.Debug("Responding health state of APIM Agent as HEALTHY")
 			return &healthservice.HealthCheckResponse{Status: healthservice.HealthCheckResponse_SERVING}, nil
 		}
-		logger.LoggerHealth.Debug("Responding health state of APIM APK Agent as NOT_HEALTHY")
+		logger.LoggerHealth.Debug("Responding health state of APIM Agent as NOT_HEALTHY")
 		return &healthservice.HealthCheckResponse{Status: healthservice.HealthCheckResponse_NOT_SERVING}, nil
 	}
 
 	// health of the component of a server
 	if isHealthy, ok := serviceHealthStatus[request.Service]; ok {
 		if isHealthy {
-			logger.LoggerHealth.Debugf("Responding health state of APIM APK Agent service \"%s\" as HEALTHY", request.Service)
+			logger.LoggerHealth.Debugf("Responding health state of APIM Agent service \"%s\" as HEALTHY", request.Service)
 			return &healthservice.HealthCheckResponse{Status: healthservice.HealthCheckResponse_SERVING}, nil
 		}
-		logger.LoggerHealth.Debugf("Responding health state of APIM APK Agent service \"%s\" as NOT_HEALTHY", request.Service)
+		logger.LoggerHealth.Debugf("Responding health state of APIM Agent service \"%s\" as NOT_HEALTHY", request.Service)
 		return &healthservice.HealthCheckResponse{Status: healthservice.HealthCheckResponse_NOT_SERVING}, nil
 	}
 
 	// no component found
-	logger.LoggerHealth.Debugf("Responding health state of APIM APK Agent service \"%s\" as UNKNOWN", request.Service)
+	logger.LoggerHealth.Debugf("Responding health state of APIM Agent service \"%s\" as UNKNOWN", request.Service)
 	return &healthservice.HealthCheckResponse{Status: healthservice.HealthCheckResponse_UNKNOWN}, nil
 }

@@ -26,7 +26,6 @@ import (
 
 // RegisterPrometheusCollector registers the Prometheus collector for metrics.
 func RegisterPrometheusCollector() {
-
 	collector := metrics.CustomMetricsCollector()
 	k8smetrics.Registry.MustRegister(collector)
 }

@@ -73,8 +73,8 @@ func HandleCreateOrUpdateEvent(event APICPEvent) (string, string, error) {
 	}
 
 	// Generate API and deployment YAMLs
-	apiYaml, definition, endpointsYaml := createAPIYaml(&event)
-	deploymentContent := createDeployementYaml(event.API.Vhost)
+	apiYaml, definition, endpointsYaml := CreateAPIYaml(&event)
+	deploymentContent := CreateDeploymentYaml(event.API.Vhost)
 	logger.LoggerMgtServer.Debugf("Created apiYaml: %s, \n\n\n created definition file: %s", apiYaml, definition)
 
 	// Determine definition file path
